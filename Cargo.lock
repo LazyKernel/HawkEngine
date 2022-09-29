@@ -513,6 +513,7 @@ dependencies = [
  "thiserror",
  "tobj",
  "vulkano",
+ "vulkano-win",
  "winit",
 ]
 
@@ -1322,6 +1323,19 @@ dependencies = [
  "serde_json",
  "smallvec",
  "vk-parse",
+]
+
+[[package]]
+name = "vulkano-win"
+version = "0.31.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eaebf8b56eccf018695c0252a5c8ddda3d49e5484d25c337e167ef06a7f5d737"
+dependencies = [
+ "core-graphics-types",
+ "objc",
+ "raw-window-handle 0.5.0",
+ "vulkano",
+ "winit",
 ]
 
 [[package]]
