@@ -16,19 +16,19 @@ mod graphics;
 
 use graphics::vulkan;
 use vulkano::device::physical::{PhysicalDevice};
+use vulkano::instance::debug::{DebugUtilsMessageSeverity, DebugUtilsMessageType, DebugUtilsMessenger, DebugUtilsMessengerCreateInfo};
 use vulkano::pipeline::GraphicsPipeline;
 use vulkano::pipeline::graphics::viewport::{Viewport};
-use vulkano::swapchain::{Swapchain, SwapchainCreateInfo, Surface, SwapchainCreationError, acquire_next_image, AcquireError, SwapchainPresentInfo, PresentInfo};
+use vulkano::swapchain::{Swapchain, SwapchainCreateInfo, Surface, SwapchainCreationError, acquire_next_image, AcquireError, SwapchainPresentInfo};
 use vulkano::sync::{self, GpuFuture, FenceSignalFuture};
 use vulkano::sync::FlushError;
 
 use std::sync::Arc;
-use anyhow::{Result};
 use winit::event::{Event, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
-use winit::window::{Window};
+use winit::window::{Window, self};
 use vulkano::instance::{
-    Instance, 
+    Instance
 };
 use vulkano::device::{
     Device, 
@@ -38,6 +38,14 @@ use vulkano::command_buffer::{ PrimaryAutoCommandBuffer};
 use vulkano::image::{ SwapchainImage};
 use vulkano::render_pass::{RenderPass, Framebuffer};
 
+const VALIDATION_LAYER: &[&str] = &[
+    "VK_LAYER_LUNARG_standard_validation"
+];
+
+#[cfg(all(debug_assertions))]
+const ENABLE_VALIDATION_LAYERS: bool = true;
+#[cfg(not(debug_assertions))]
+const ENABLE_VALIDATION_LAYERS: bool = false;
 
 struct App {
     instance: Arc<Instance>,
@@ -59,7 +67,7 @@ impl App {
             khr_swapchain: true,
             ..DeviceExtensions::empty()
         };
-        let instance = vulkan::create_instance();
+        let instance = vulkan::create_instance(true);
 
         let surface = vulkan::create_surface(&instance, event_loop);
 
@@ -83,9 +91,6 @@ impl App {
 
     fn destroy(&mut self) {}
 }
-
-#[derive(Clone, Debug, Default)]
-struct AppData;
 
 fn main() {
     pretty_env_logger::init();
@@ -112,6 +117,11 @@ fn main() {
 
                     let new_dimensions = app.surface.object().unwrap().downcast_ref::<Window>().unwrap().inner_size();
 
+                    // ignore rendering if one of the dimensions is 0
+                    if new_dimensions.height == 0 || new_dimensions.width == 0 {
+                        return
+                    }
+
                     let (new_swapchain, new_images) = match app.swapchain.recreate(SwapchainCreateInfo {
                         image_extent: new_dimensions.into(),
                         ..app.swapchain.create_info()
@@ -120,6 +130,8 @@ fn main() {
                         // Apparently the creation can fail if the user keeps resizing
                         // In that case we can just try to recreate again on the next frame
                         Err(SwapchainCreationError::ImageExtentNotSupported { .. }) => return,
+                        // Happens when minimized
+                        Err(SwapchainCreationError::ImageExtentZeroLengthDimensions { .. }) => return,
                         Err(e) => panic!("Failed to recreate swapcahin: {:?}", e),
                     };
                     app.swapchain = new_swapchain;

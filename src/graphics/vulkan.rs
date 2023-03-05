@@ -19,7 +19,7 @@ use vulkano::{VulkanLibrary};
 use vulkano::instance::{
     Instance, 
     InstanceCreateInfo,
-    Version
+    Version, InstanceExtensions
 };
 use vulkano::device::{
     Device,
@@ -41,16 +41,36 @@ pub fn create_surface(instance: &Arc<Instance>, event_loop: &EventLoop<()>) -> A
     .unwrap()
 }
 
-pub fn create_instance() -> Arc<Instance> {
+pub fn create_instance(debug: bool) -> Arc<Instance> {
     let library = VulkanLibrary::new().unwrap();
     let required_extensions = vulkano_win::required_extensions(&library);
+
+    const VALIDATION_LAYER_NAME: &str = "VK_LAYER_KHRONOS_validation";
+    let mut layers: Vec<String> = vec![];
+
+    if debug {
+        // Iterate layers for validation layer support
+        let has_validation_support = library
+            .layer_properties()
+            .unwrap()
+            .any(|v| { v.name() == VALIDATION_LAYER_NAME });
+        if has_validation_support {
+            layers = vec![VALIDATION_LAYER_NAME.to_string()];
+        }
+    }
+
+    let extensions = InstanceExtensions {
+        ext_debug_utils: debug,
+        ..required_extensions
+    };
 
     let create_info = InstanceCreateInfo {
         application_name: Some("Hawk Engine - Test".into()),
         application_version: Version { major: 0, minor: 0, patch: 1 },
         engine_name: Some("Hawk Engine".into()),
         engine_version: Version { major: 0, minor: 0, patch: 1 },
-        enabled_extensions: required_extensions,
+        enabled_extensions: extensions,
+        enabled_layers: layers,
         enumerate_portability: true,
         ..Default::default()
     };
