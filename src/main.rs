@@ -36,7 +36,6 @@ use vulkano::device::{
     Device, 
     Queue, DeviceExtensions,
 };
-use vulkano::command_buffer::{PrimaryAutoCommandBuffer};
 use vulkano::image::{SwapchainImage};
 use vulkano::render_pass::{RenderPass, Framebuffer};
 
@@ -74,12 +73,12 @@ impl App {
             ..DeviceExtensions::empty()
         };
 
-        let instance = Vulkan::create_instance(true);
+        let instance = Vulkan::create_instance(ENABLE_VALIDATION_LAYERS);
         let surface = Vulkan::create_surface(&instance, event_loop);
         let (physical, queue_index) = Vulkan::select_physical_device(&instance, &surface, &device_extensions);
         let (device, queue) = Vulkan::create_device(&physical, queue_index, &device_extensions);
 
-        let vulkan = Vulkan::new(&device);
+        let vulkan = Vulkan::new(&device, &queue);
 
         let (swapchain, images) = vulkan.create_swapchain(&physical, &surface);
         let render_pass = vulkan.create_render_pass(&swapchain);
@@ -209,7 +208,6 @@ fn main() {
                 let view_ubo = app.ubo_pool.from_data(ubo_data).unwrap();
 
                 let command_buffer = app.vulkan.create_command_buffer(
-                    &app.queue, 
                     &app.pipeline, 
                     &app.framebuffers[image_i], 
                     &vertex_buffer, 

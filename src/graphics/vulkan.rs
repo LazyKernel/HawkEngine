@@ -6,7 +6,7 @@ use vulkano::command_buffer::allocator::{StandardCommandBufferAllocator, Standar
 use vulkano::descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet};
 use vulkano::descriptor_set::allocator::StandardDescriptorSetAllocator;
 use vulkano::device::physical::{PhysicalDevice, PhysicalDeviceType};
-use vulkano::memory::allocator::{StandardMemoryAllocator, MemoryUsage, GenericMemoryAllocator, FreeListAllocator, FastMemoryAllocator};
+use vulkano::memory::allocator::{StandardMemoryAllocator, MemoryUsage, FastMemoryAllocator};
 use vulkano::pipeline::{GraphicsPipeline, Pipeline, PipelineBindPoint};
 use vulkano::pipeline::graphics::input_assembly::InputAssemblyState;
 use vulkano::pipeline::graphics::vertex_input::BuffersDefinition;
@@ -19,7 +19,7 @@ use anyhow::{anyhow};
 use winit::dpi::LogicalSize;
 use winit::event_loop::{EventLoop};
 use winit::window::{Window, WindowBuilder};
-use vulkano::{VulkanLibrary, descriptor_set};
+use vulkano::{VulkanLibrary};
 use vulkano::instance::{
     Instance, 
     InstanceCreateInfo,
@@ -32,13 +32,14 @@ use vulkano::device::{
     Queue, DeviceExtensions
 };
 use vulkano::buffer::{CpuAccessibleBuffer, BufferUsage, TypedBufferAccess, CpuBufferPool};
-use vulkano::command_buffer::{AutoCommandBufferBuilder, CommandBufferUsage, RenderPassBeginInfo, SubpassContents, PrimaryAutoCommandBuffer};
+use vulkano::command_buffer::{AutoCommandBufferBuilder, CommandBufferUsage, RenderPassBeginInfo, SubpassContents, PrimaryAutoCommandBuffer, CommandBufferLevel};
 use vulkano::image::{ImageUsage, SwapchainImage};
 use vulkano::image::view::ImageView;
 use vulkano::render_pass::{RenderPass, Framebuffer, FramebufferCreateInfo, Subpass};
 
 pub struct Vulkan {
     device: Arc<Device>,
+    queue: Arc<Queue>,
     buffer_memory_allocator: Arc<StandardMemoryAllocator>,
     command_buffer_allocator: Arc<StandardCommandBufferAllocator>,
     fast_buffer_memory_allocator: Arc<FastMemoryAllocator>,
@@ -46,13 +47,13 @@ pub struct Vulkan {
 }
 
 impl Vulkan {
-    pub fn new(device: &Arc<Device>) -> Self {
+    pub fn new(device: &Arc<Device>, queue: &Arc<Queue>) -> Self {
         let buffer_memory_allocator = Arc::new(StandardMemoryAllocator::new_default(device.clone()));
         let command_buffer_allocator = Arc::new(StandardCommandBufferAllocator::new(device.clone(), StandardCommandBufferAllocatorCreateInfo::default()));
         let fast_buffer_memory_allocator = Arc::new(FastMemoryAllocator::new_default(device.clone()));
         let descriptor_set_allocator = Arc::new(StandardDescriptorSetAllocator::new(device.clone()));
 
-        Self { device: device.clone(), buffer_memory_allocator, command_buffer_allocator, fast_buffer_memory_allocator, descriptor_set_allocator }
+        Self { device: device.clone(), queue: queue.clone(), buffer_memory_allocator, command_buffer_allocator, fast_buffer_memory_allocator, descriptor_set_allocator }
     }
 
     pub fn create_surface(instance: &Arc<Instance>, event_loop: &EventLoop<()>) -> Arc<Surface> {
@@ -142,6 +143,17 @@ impl Vulkan {
     
         return (device, queues.next().unwrap());
     }
+
+    /*fn create_command_pool(device: &Arc<Device>, queue: &Arc<Queue>) -> Arc<CommandPool> {
+        Arc::new(CommandPool::new(device.clone(), CommandPoolCreateInfo {
+            queue_family_index: queue.queue_family_index(),
+            // resetting the created buffers every frame, but only creating once
+            transient: false,
+            // allows resetting the created command buffers
+            reset_command_buffer: true,
+            ..Default::default()
+        }).unwrap())
+    }*/
     
     pub fn create_pipeline(
         &self,
@@ -174,7 +186,7 @@ impl Vulkan {
         return pipeline;
     }
     
-    pub fn create_render_pass(&self, swapchain: &Arc<Swapchain>,) -> Arc<RenderPass> {
+    pub fn create_render_pass(&self, swapchain: &Arc<Swapchain>) -> Arc<RenderPass> {
         vulkano::single_pass_renderpass!(
             self.device.clone(),
             attachments: {
@@ -283,10 +295,23 @@ impl Vulkan {
             MemoryUsage::Upload
         ).into()
     }
-    
+
+    /*pub fn create_command_buffers(
+        &self,
+        count: u8
+    ) -> Vec<Arc<CommandPoolAlloc>> {
+        self.command_pool.allocate_command_buffers(CommandBufferAllocateInfo { 
+            level: CommandBufferLevel::Primary, 
+            command_buffer_count: count as u32,
+            ..Default::default()
+        })
+        .unwrap()
+        .map(|v| -> Arc<CommandPoolAlloc> { Arc::new(v) })
+        .collect()
+    }*/
+
     pub fn create_command_buffer(
         &self,
-        queue: &Arc<Queue>,
         pipeline: &Arc<GraphicsPipeline>,
         framebuffer: &Arc<Framebuffer>,
         vertex_buffer: &Arc<CpuAccessibleBuffer<[Vertex]>>,
@@ -294,6 +319,7 @@ impl Vulkan {
         view_ubo: &Arc<CpuBufferPoolSubbuffer<UniformBufferObject>>,
     ) -> Arc<PrimaryAutoCommandBuffer> {
         // TODO: don't recreate the command buffer anew, but reset and write over the same one
+        // Not gonna optimize yet, since the library seems to have some type of optimizations already
 
         let layout = pipeline.layout().set_layouts().get(0).unwrap();
         let descriptor_set = PersistentDescriptorSet::new(
@@ -304,10 +330,10 @@ impl Vulkan {
 
         let mut builder = AutoCommandBufferBuilder::primary(
             &self.command_buffer_allocator,
-            queue.queue_family_index(),
+            self.queue.queue_family_index(),
             CommandBufferUsage::MultipleSubmit
         ).unwrap();
-    
+
         builder
             .begin_render_pass(
                 RenderPassBeginInfo {
@@ -327,44 +353,5 @@ impl Vulkan {
             .unwrap();
     
         Arc::new(builder.build().unwrap())
-    }
-    
-    pub fn create_command_buffers(
-        &self,
-        queue: &Arc<Queue>,
-        pipeline: &Arc<GraphicsPipeline>,
-        framebuffers: &Vec<Arc<Framebuffer>>
-    ) -> Vec<Arc<PrimaryAutoCommandBuffer>> {
-        let (vertex_buffer, index_buffer) = self.construct_triangle();
-    
-        framebuffers
-            .iter()
-            .map(|framebuffer| {
-                let mut builder = AutoCommandBufferBuilder::primary(
-                    &self.command_buffer_allocator,
-                    queue.queue_family_index(),
-                    CommandBufferUsage::MultipleSubmit
-                ).unwrap();
-    
-                builder
-                    .begin_render_pass(
-                        RenderPassBeginInfo {
-                            clear_values: vec![Some([0.1, 0.1, 0.1, 1.0].into())],
-                            ..RenderPassBeginInfo::framebuffer(framebuffer.clone())
-                        },
-                        SubpassContents::Inline,
-                    )
-                    .unwrap()
-                    .bind_pipeline_graphics(pipeline.clone())
-                    .bind_vertex_buffers(0, vertex_buffer.clone())
-                    .bind_index_buffer(index_buffer.clone())
-                    .draw_indexed(index_buffer.len() as u32, 1, 0, 0, 0)
-                    .unwrap()
-                    .end_render_pass()
-                    .unwrap();
-    
-                Arc::new(builder.build().unwrap())
-            })
-            .collect()
     }
 }
