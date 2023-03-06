@@ -17,8 +17,9 @@ mod graphics;
 use graphics::vulkan::Vulkan;
 use shaders::vs::ty::UniformBufferObject;
 use vulkano::buffer::CpuBufferPool;
+use vulkano::descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet};
 use vulkano::device::physical::{PhysicalDevice};
-use vulkano::pipeline::GraphicsPipeline;
+use vulkano::pipeline::{GraphicsPipeline, Pipeline};
 use vulkano::pipeline::graphics::viewport::{Viewport};
 use vulkano::swapchain::{Swapchain, SwapchainCreateInfo, Surface, SwapchainCreationError, acquire_next_image, AcquireError, SwapchainPresentInfo};
 use vulkano::sync::{self, GpuFuture, FenceSignalFuture};
@@ -108,6 +109,14 @@ fn main() {
 
     // TODO: move away
     let (vertex_buffer, index_buffer) = app.vulkan.construct_triangle();
+    let (texture, sampler) = app.vulkan.load_image();
+    // Setup texture descriptor set
+    let layout_texture = app.pipeline.layout().set_layouts().get(1).unwrap();
+    let descriptor_set_texture = PersistentDescriptorSet::new(
+        &app.vulkan.descriptor_set_allocator,
+        layout_texture.clone(),
+        [WriteDescriptorSet::image_view_sampler(0, texture.clone(), sampler.clone())]
+    ).unwrap();
 
     let frames_in_flight = app.images.len();
     let mut fences: Vec<Option<Arc<FenceSignalFuture<_>>>> = vec![None; frames_in_flight];
@@ -212,7 +221,8 @@ fn main() {
                     &app.framebuffers[image_i], 
                     &vertex_buffer, 
                     &index_buffer, 
-                    &view_ubo
+                    &view_ubo,
+                    &descriptor_set_texture,
                 );
 
                 if let Some(image_fence) = &fences[image_i] {

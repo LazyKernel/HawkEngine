@@ -3,17 +3,22 @@ use crate::shaders;
 use crate::shaders::vs::ty::UniformBufferObject;
 use vulkano::buffer::cpu_pool::CpuBufferPoolSubbuffer;
 use vulkano::command_buffer::allocator::{StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo};
-use vulkano::descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet};
+use vulkano::descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet, DescriptorSet};
 use vulkano::descriptor_set::allocator::StandardDescriptorSetAllocator;
 use vulkano::device::physical::{PhysicalDevice, PhysicalDeviceType};
+use vulkano::format::Format;
 use vulkano::memory::allocator::{StandardMemoryAllocator, MemoryUsage, FastMemoryAllocator};
+use vulkano::pipeline::graphics::color_blend::ColorBlendState;
 use vulkano::pipeline::{GraphicsPipeline, Pipeline, PipelineBindPoint};
 use vulkano::pipeline::graphics::input_assembly::InputAssemblyState;
 use vulkano::pipeline::graphics::vertex_input::BuffersDefinition;
 use vulkano::pipeline::graphics::viewport::{Viewport, ViewportState};
+use vulkano::sampler::{Sampler, SamplerCreateInfo, Filter, SamplerAddressMode};
 use vulkano::swapchain::{Swapchain, SwapchainCreateInfo, Surface};
+use vulkano::sync::GpuFuture;
 use vulkano_win::VkSurfaceBuild;
 
+use std::fs::File;
 use std::sync::Arc;
 use anyhow::{anyhow};
 use winit::dpi::LogicalSize;
@@ -32,8 +37,8 @@ use vulkano::device::{
     Queue, DeviceExtensions
 };
 use vulkano::buffer::{CpuAccessibleBuffer, BufferUsage, TypedBufferAccess, CpuBufferPool};
-use vulkano::command_buffer::{AutoCommandBufferBuilder, CommandBufferUsage, RenderPassBeginInfo, SubpassContents, PrimaryAutoCommandBuffer, CommandBufferLevel};
-use vulkano::image::{ImageUsage, SwapchainImage};
+use vulkano::command_buffer::{AutoCommandBufferBuilder, CommandBufferUsage, RenderPassBeginInfo, SubpassContents, PrimaryAutoCommandBuffer, CommandBufferLevel, PrimaryCommandBufferAbstract};
+use vulkano::image::{ImageUsage, SwapchainImage, ImmutableImage, ImageDimensions, MipmapsCount};
 use vulkano::image::view::ImageView;
 use vulkano::render_pass::{RenderPass, Framebuffer, FramebufferCreateInfo, Subpass};
 
@@ -43,7 +48,8 @@ pub struct Vulkan {
     buffer_memory_allocator: Arc<StandardMemoryAllocator>,
     command_buffer_allocator: Arc<StandardCommandBufferAllocator>,
     fast_buffer_memory_allocator: Arc<FastMemoryAllocator>,
-    descriptor_set_allocator: Arc<StandardDescriptorSetAllocator>
+    // TODO: temporarily public
+    pub descriptor_set_allocator: Arc<StandardDescriptorSetAllocator>
 }
 
 impl Vulkan {
@@ -173,12 +179,14 @@ impl Vulkan {
             }
         };
     
+        let subpass = Subpass::from(render_pass.clone(), 0).unwrap();
         let pipeline = GraphicsPipeline::start()
             .vertex_input_state(BuffersDefinition::new().vertex::<Vertex>())
             .vertex_shader(vs.entry_point("main").unwrap(), ())
             .input_assembly_state(InputAssemblyState::new())
             .viewport_state(ViewportState::viewport_fixed_scissor_irrelevant([viewport_value]))
             .fragment_shader(fs.entry_point("main").unwrap(), ())
+            .color_blend_state(ColorBlendState::new(subpass.num_color_attachments()).blend_alpha())
             .render_pass(Subpass::from(render_pass.clone(), 0).unwrap())
             .build(self.device.clone())
             .unwrap();
@@ -255,10 +263,10 @@ impl Vulkan {
         Arc<CpuAccessibleBuffer<[Vertex]>>, 
         Arc<CpuAccessibleBuffer<[u16]>>
     ) {
-        let v1 = Vertex { position: [-0.5, -0.5, 0.0], color: [1.0, 0.0, 0.0] };
-        let v2 = Vertex { position: [ 0.5, -0.5, 0.0], color: [0.0, 1.0, 0.0] };
-        let v3 = Vertex { position: [ 0.5,  0.5, 0.0], color: [0.0, 0.0, 1.0] };
-        let v4 = Vertex { position: [-0.5,  0.5, 0.0], color: [1.0, 1.0, 1.0] };
+        let v1 = Vertex { position: [-0.5, -0.5, 0.0], color: [1.0, 0.0, 0.0], tex_coord: [1.0, 0.0] };
+        let v2 = Vertex { position: [ 0.5, -0.5, 0.0], color: [0.0, 1.0, 0.0], tex_coord: [0.0, 0.0] };
+        let v3 = Vertex { position: [ 0.5,  0.5, 0.0], color: [0.0, 0.0, 1.0], tex_coord: [0.0, 1.0] };
+        let v4 = Vertex { position: [-0.5,  0.5, 0.0], color: [1.0, 1.0, 1.0], tex_coord: [1.0, 1.0] };
     
         let indices: [u16; 6] = [0, 1, 2, 2, 3, 0];
     
@@ -285,6 +293,66 @@ impl Vulkan {
         return (vertex_buffer, index_buffer);
     }
     
+    pub fn load_image(&self) -> (Arc<ImageView<ImmutableImage>>, Arc<Sampler>) {
+        let image = File::open("resources/nice.png").unwrap();
+
+        let decoder = png::Decoder::new(image);
+        let mut reader = decoder.read_info().unwrap();
+
+        let mut pixels = vec![0; reader.info().raw_bytes()];
+        reader.next_frame(&mut pixels).unwrap();
+
+        let size = reader.info().raw_bytes() as u64;
+        let (width, height) = reader.info().size();
+
+        let dimensions = ImageDimensions::Dim2d { 
+            width, 
+            height, 
+            array_layers: 1 
+        };
+
+        let mut uploads = AutoCommandBufferBuilder::primary(
+            &self.command_buffer_allocator,
+            self.queue.queue_family_index(),
+            CommandBufferUsage::OneTimeSubmit,
+        )
+        .unwrap();
+
+        let image = ImmutableImage::from_iter(
+            &self.buffer_memory_allocator,
+            pixels,
+            dimensions,
+            MipmapsCount::One,
+            Format::R8G8B8A8_SRGB,
+            &mut uploads
+        ).unwrap();
+
+        // Need to use the created command buffer to upload the texture to the gpu
+        let mut image_upload = uploads
+            .build()
+            .unwrap()
+            .execute(self.queue.clone())
+            .unwrap()
+            .boxed();
+
+        // TODO: move this to somewhere smart for cleanup
+        //image_upload.as_mut().cleanup_finished();
+
+        let texture = ImageView::new_default(image).unwrap();
+
+        let sampler = Sampler::new(
+            self.device.clone(),
+            SamplerCreateInfo {
+                mag_filter: Filter::Linear,
+                min_filter: Filter::Linear,
+                address_mode: [SamplerAddressMode::Repeat; 3],
+                ..Default::default()
+            }
+        ).unwrap();
+
+        return (texture, sampler);
+    }
+
     pub fn create_view_ubo_pool(&self) -> Arc<CpuBufferPool<UniformBufferObject>> {
         CpuBufferPool::<UniformBufferObject>::new(
             self.buffer_memory_allocator.clone(),
@@ -317,14 +385,16 @@ impl Vulkan {
         vertex_buffer: &Arc<CpuAccessibleBuffer<[Vertex]>>,
         index_buffer: &Arc<CpuAccessibleBuffer<[u16]>>,
         view_ubo: &Arc<CpuBufferPoolSubbuffer<UniformBufferObject>>,
+        descriptor_set_texture: &Arc<PersistentDescriptorSet>
     ) -> Arc<PrimaryAutoCommandBuffer> {
         // TODO: don't recreate the command buffer anew, but reset and write over the same one
         // Not gonna optimize yet, since the library seems to have some type of optimizations already
 
-        let layout = pipeline.layout().set_layouts().get(0).unwrap();
-        let descriptor_set = PersistentDescriptorSet::new(
+        // Setup MVP descriptor set
+        let layout_view = pipeline.layout().set_layouts().get(0).unwrap();
+        let descriptor_set_view = PersistentDescriptorSet::new(
             &self.descriptor_set_allocator,
-            layout.clone(),
+            layout_view.clone(),
             [WriteDescriptorSet::buffer(0, view_ubo.clone())]
         ).unwrap();
 
@@ -344,7 +414,8 @@ impl Vulkan {
             )
             .unwrap()
             .bind_pipeline_graphics(pipeline.clone())
-            .bind_descriptor_sets(PipelineBindPoint::Graphics, pipeline.layout().clone(), 0, descriptor_set)
+            .bind_descriptor_sets(PipelineBindPoint::Graphics, pipeline.layout().clone(), 0, descriptor_set_view.clone())
+            .bind_descriptor_sets(PipelineBindPoint::Graphics, pipeline.layout().clone(), 1, descriptor_set_texture.clone())
             .bind_vertex_buffers(0, vertex_buffer.clone())
             .bind_index_buffer(index_buffer.clone())
             .draw_indexed(index_buffer.len() as u32, 1, 0, 0, 0)
