@@ -14,9 +14,10 @@ mod data_structures;
 mod shaders;
 mod graphics;
 
-use graphics::vulkan;
+use graphics::vulkan::Vulkan;
+use shaders::vs::ty::UniformBufferObject;
+use vulkano::buffer::CpuBufferPool;
 use vulkano::device::physical::{PhysicalDevice};
-use vulkano::instance::debug::{DebugUtilsMessageSeverity, DebugUtilsMessageType, DebugUtilsMessenger, DebugUtilsMessengerCreateInfo};
 use vulkano::pipeline::GraphicsPipeline;
 use vulkano::pipeline::graphics::viewport::{Viewport};
 use vulkano::swapchain::{Swapchain, SwapchainCreateInfo, Surface, SwapchainCreationError, acquire_next_image, AcquireError, SwapchainPresentInfo};
@@ -24,9 +25,10 @@ use vulkano::sync::{self, GpuFuture, FenceSignalFuture};
 use vulkano::sync::FlushError;
 
 use std::sync::Arc;
+use std::time::Instant;
 use winit::event::{Event, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
-use winit::window::{Window, self};
+use winit::window::{Window};
 use vulkano::instance::{
     Instance
 };
@@ -34,8 +36,8 @@ use vulkano::device::{
     Device, 
     Queue, DeviceExtensions,
 };
-use vulkano::command_buffer::{ PrimaryAutoCommandBuffer};
-use vulkano::image::{ SwapchainImage};
+use vulkano::command_buffer::{PrimaryAutoCommandBuffer};
+use vulkano::image::{SwapchainImage};
 use vulkano::render_pass::{RenderPass, Framebuffer};
 
 const VALIDATION_LAYER: &[&str] = &[
@@ -58,7 +60,11 @@ struct App {
     surface: Arc<Surface>,
     swapchain: Arc<Swapchain>,
     images: Vec<Arc<SwapchainImage>>,
-    command_buffers: Vec<Arc<PrimaryAutoCommandBuffer>>
+    ubo_pool: Arc<CpuBufferPool<UniformBufferObject>>,
+
+    vulkan: Vulkan,
+
+    start: Instant
 }
 
 impl App {
@@ -67,18 +73,20 @@ impl App {
             khr_swapchain: true,
             ..DeviceExtensions::empty()
         };
-        let instance = vulkan::create_instance(true);
 
-        let surface = vulkan::create_surface(&instance, event_loop);
+        let instance = Vulkan::create_instance(true);
+        let surface = Vulkan::create_surface(&instance, event_loop);
+        let (physical, queue_index) = Vulkan::select_physical_device(&instance, &surface, &device_extensions);
+        let (device, queue) = Vulkan::create_device(&physical, queue_index, &device_extensions);
 
-        let (physical, queue_index) = vulkan::select_physical_device(&instance, &surface, &device_extensions);
-        let (device, queue) = vulkan::create_device(&physical, queue_index, &device_extensions);
-        let (swapchain, images) = vulkan::create_swapchain(&device, &physical, &surface);
-        let render_pass = vulkan::create_render_pass(&device, &swapchain);
-        let framebuffers= vulkan::create_framebuffers(&render_pass, &images);
-        let pipeline = vulkan::create_pipeline(&device, &render_pass, &surface, None);
-        let command_buffers = vulkan::create_command_buffers(&device, &queue, &pipeline, &framebuffers);
-        return Self { instance, device, physical, queue, render_pass, framebuffers, pipeline, surface, swapchain, images, command_buffers };
+        let vulkan = Vulkan::new(&device);
+
+        let (swapchain, images) = vulkan.create_swapchain(&physical, &surface);
+        let render_pass = vulkan.create_render_pass(&swapchain);
+        let framebuffers= vulkan.create_framebuffers(&render_pass, &images);
+        let pipeline = vulkan.create_pipeline(&render_pass, &surface, None);
+        let ubo_pool = vulkan.create_view_ubo_pool();
+        return Self { instance, device, physical, queue, render_pass, framebuffers, pipeline, surface, swapchain, images, ubo_pool, vulkan, start: Instant::now() };
     }
 
     fn run(&mut self) -> () {
@@ -98,6 +106,9 @@ fn main() {
     // App
     let event_loop = EventLoop::new();
     let mut app = App::create(&event_loop);
+
+    // TODO: move away
+    let (vertex_buffer, index_buffer) = app.vulkan.construct_triangle();
 
     let frames_in_flight = app.images.len();
     let mut fences: Vec<Option<Arc<FenceSignalFuture<_>>>> = vec![None; frames_in_flight];
@@ -135,7 +146,7 @@ fn main() {
                         Err(e) => panic!("Failed to recreate swapcahin: {:?}", e),
                     };
                     app.swapchain = new_swapchain;
-                    let new_framebuffers = vulkan::create_framebuffers(
+                    let new_framebuffers = app.vulkan.create_framebuffers(
                         &app.render_pass,
                         &new_images
                     );
@@ -149,8 +160,7 @@ fn main() {
                             depth_range: 0.0..1.0,
                         };
 
-                        let new_pipeline = vulkan::create_pipeline(&app.device, &app.render_pass, &app.surface, Some(&viewport));
-                        app.command_buffers = vulkan::create_command_buffers(&app.device, &app.queue, &new_pipeline, &new_framebuffers);
+                        let new_pipeline = app.vulkan.create_pipeline(&app.render_pass, &app.surface, Some(&viewport));
                         app.images = new_images;
                         app.pipeline = new_pipeline;
                         app.framebuffers = new_framebuffers;
@@ -171,6 +181,42 @@ fn main() {
                     recreate_swapchain = true;
                 }
 
+                // Set up ubo data, currently just the MVP matrices
+                let time = app.start.elapsed().as_secs_f32();
+                let model = nalgebra_glm::rotate(
+                    &nalgebra_glm::identity(), 
+                    time * nalgebra_glm::radians(&nalgebra_glm::vec1(90.0))[0], 
+                    &nalgebra_glm::vec3(0.0, 0.0, 1.0)
+                );
+                let view = nalgebra_glm::look_at(
+                    &nalgebra_glm::vec3(2.0, 2.0, 2.0),
+                &nalgebra_glm::vec3(0.0, 0.0, 0.0),
+                    &nalgebra_glm::vec3(0.0, 0.0, 1.0),
+                );
+                let mut proj = nalgebra_glm::perspective(
+                    app.swapchain.image_extent()[0] as f32 / app.swapchain.image_extent()[1] as f32,
+                    nalgebra_glm::radians(&nalgebra_glm::vec1(45.0))[0],
+                    0.1,
+                    10.0,
+                );
+                // convert from OpenGL to Vulkan coordinates
+                proj[(1, 1)] *= -1.0;
+                let ubo_data = UniformBufferObject {
+                    model: model.into(),
+                    view: view.into(),
+                    proj: proj.into()
+                };
+                let view_ubo = app.ubo_pool.from_data(ubo_data).unwrap();
+
+                let command_buffer = app.vulkan.create_command_buffer(
+                    &app.queue, 
+                    &app.pipeline, 
+                    &app.framebuffers[image_i], 
+                    &vertex_buffer, 
+                    &index_buffer, 
+                    &view_ubo
+                );
+
                 if let Some(image_fence) = &fences[image_i] {
                     image_fence.wait(None).unwrap();
                 }
@@ -188,7 +234,7 @@ fn main() {
 
                 let future = previous_future
                     .join(acquire_future)
-                    .then_execute(app.queue.clone(), app.command_buffers[image_i].clone())
+                    .then_execute(app.queue.clone(), command_buffer.clone())
                     .unwrap()
                     .then_swapchain_present(
                         app.queue.clone(),
