@@ -15,7 +15,7 @@ use anyhow::{anyhow};
 use winit::dpi::LogicalSize;
 use winit::event_loop::{EventLoop};
 use winit::window::{Window, WindowBuilder};
-use vulkano::{VulkanLibrary};
+use vulkano::{VulkanLibrary, memory};
 use vulkano::instance::{
     Instance, 
     InstanceCreateInfo,
@@ -217,10 +217,16 @@ pub fn create_swapchain(device: &Arc<Device>, physical: &Arc<PhysicalDevice>, su
     ).unwrap()
 }
 
-pub fn construct_triangle(device: &Arc<Device>) -> Arc<CpuAccessibleBuffer<[Vertex]>> {
-    let v1 = Vertex { position: [-0.5, -0.5 ] };
-    let v2 = Vertex { position: [ 0.0,  0.5 ] };
-    let v3 = Vertex { position: [ 0.5, -0.25 ] };
+pub fn construct_triangle(device: &Arc<Device>) -> (
+    Arc<CpuAccessibleBuffer<[Vertex]>>, 
+    Arc<CpuAccessibleBuffer<[u16]>>
+) {
+    let v1 = Vertex { position: [-0.5, -0.5, 0.0], color: [1.0, 0.0, 0.0] };
+    let v2 = Vertex { position: [ 0.5, -0.5, 0.0], color: [0.0, 1.0, 0.0] };
+    let v3 = Vertex { position: [ 0.5,  0.5, 0.0], color: [0.0, 0.0, 1.0] };
+    let v4 = Vertex { position: [-0.5,  0.5, 0.0], color: [1.0, 1.0, 1.0] };
+
+    let indices: [u16; 6] = [0, 1, 2, 2, 3, 0];
 
     let memory_allocator = StandardMemoryAllocator::new_default(device.clone());
 
@@ -231,10 +237,24 @@ pub fn construct_triangle(device: &Arc<Device>) -> Arc<CpuAccessibleBuffer<[Vert
             ..Default::default()
         },
         false,
-        vec![v1, v2, v3].into_iter()
+        vec![v1, v2, v3, v4].into_iter()
     ).unwrap();
 
-    return vertex_buffer;
+    let index_buffer = CpuAccessibleBuffer::from_iter(
+        &memory_allocator,
+        BufferUsage {
+            index_buffer: true,
+            ..Default::default()
+        },
+        false,
+        indices.into_iter()
+    ).unwrap();
+
+    return (vertex_buffer, index_buffer);
+}
+
+pub fn create_buffers() {
+    
 }
 
 pub fn create_command_buffers(
@@ -243,7 +263,7 @@ pub fn create_command_buffers(
     pipeline: &Arc<GraphicsPipeline>,
     framebuffers: &Vec<Arc<Framebuffer>>,
 ) -> Vec<Arc<PrimaryAutoCommandBuffer>> {
-    let vertex_buffer = construct_triangle(device);
+    let (vertex_buffer, index_buffer) = construct_triangle(device);
 
     let memory_allocator = StandardCommandBufferAllocator::new(device.clone(), StandardCommandBufferAllocatorCreateInfo::default());
 
@@ -267,7 +287,8 @@ pub fn create_command_buffers(
                 .unwrap()
                 .bind_pipeline_graphics(pipeline.clone())
                 .bind_vertex_buffers(0, vertex_buffer.clone())
-                .draw(vertex_buffer.len() as u32, 1, 0, 0)
+                .bind_index_buffer(index_buffer.clone())
+                .draw_indexed(index_buffer.len() as u32, 1, 0, 0, 0)
                 .unwrap()
                 .end_render_pass()
                 .unwrap();
