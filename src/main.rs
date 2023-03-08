@@ -126,6 +126,7 @@ fn main() {
     let mut window_resized = false;
     let mut recreate_swapchain = false;
 
+    // look into this when rendering https://www.reddit.com/r/vulkan/comments/e7n5b6/drawing_multiple_objects/
     event_loop.run(move |event, _, control_flow| {
         //*control_flow = ControlFlow::Poll;
         match event {

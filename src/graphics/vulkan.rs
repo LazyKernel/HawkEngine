@@ -9,6 +9,7 @@ use vulkano::device::physical::{PhysicalDevice, PhysicalDeviceType};
 use vulkano::format::Format;
 use vulkano::memory::allocator::{StandardMemoryAllocator, MemoryUsage, FastMemoryAllocator};
 use vulkano::pipeline::graphics::color_blend::ColorBlendState;
+use vulkano::pipeline::graphics::depth_stencil::DepthStencilState;
 use vulkano::pipeline::{GraphicsPipeline, Pipeline, PipelineBindPoint};
 use vulkano::pipeline::graphics::input_assembly::InputAssemblyState;
 use vulkano::pipeline::graphics::vertex_input::BuffersDefinition;
@@ -38,7 +39,7 @@ use vulkano::device::{
 };
 use vulkano::buffer::{CpuAccessibleBuffer, BufferUsage, TypedBufferAccess, CpuBufferPool};
 use vulkano::command_buffer::{AutoCommandBufferBuilder, CommandBufferUsage, RenderPassBeginInfo, SubpassContents, PrimaryAutoCommandBuffer, CommandBufferLevel, PrimaryCommandBufferAbstract};
-use vulkano::image::{ImageUsage, SwapchainImage, ImmutableImage, ImageDimensions, MipmapsCount};
+use vulkano::image::{ImageUsage, SwapchainImage, ImmutableImage, ImageDimensions, MipmapsCount, ImageAccess, AttachmentImage};
 use vulkano::image::view::ImageView;
 use vulkano::render_pass::{RenderPass, Framebuffer, FramebufferCreateInfo, Subpass};
 
@@ -187,6 +188,7 @@ impl Vulkan {
             .viewport_state(ViewportState::viewport_fixed_scissor_irrelevant([viewport_value]))
             .fragment_shader(fs.entry_point("main").unwrap(), ())
             .color_blend_state(ColorBlendState::new(subpass.num_color_attachments()).blend_alpha())
+            .depth_stencil_state(DepthStencilState::simple_depth_test())
             .render_pass(Subpass::from(render_pass.clone(), 0).unwrap())
             .build(self.device.clone())
             .unwrap();
@@ -203,16 +205,28 @@ impl Vulkan {
                     store: Store,
                     format: swapchain.image_format(),
                     samples: 1,
+                },
+                depth: {
+                    load: Clear,
+                    store: DontCare,
+                    format: Format::D16_UNORM,
+                    samples: 1,
                 }
             },
             pass: {
                 color: [color],
-                depth_stencil: {}
+                depth_stencil: {depth}
             }
         ).unwrap()
     }
     
     pub fn create_framebuffers(&self, render_pass: &Arc<RenderPass>, images: &Vec<Arc<SwapchainImage>>) -> Vec<Arc<Framebuffer>> {
+        // Create depth buffer
+        let dimensions = images[0].dimensions().width_height();
+        let depth_buffer = ImageView::new_default(
+            AttachmentImage::transient(&self.buffer_memory_allocator, dimensions, Format::D16_UNORM).unwrap()
+        ).unwrap();
+
         images
             .iter()
             .map(|image| {
@@ -220,7 +234,7 @@ impl Vulkan {
                 Framebuffer::new(
                     render_pass.clone(),
                     FramebufferCreateInfo { 
-                        attachments: vec![view],
+                        attachments: vec![view, depth_buffer.clone()],
                         ..Default::default()
                     }
                 ).unwrap()
@@ -407,7 +421,7 @@ impl Vulkan {
         builder
             .begin_render_pass(
                 RenderPassBeginInfo {
-                    clear_values: vec![Some([0.1, 0.1, 0.1, 1.0].into())],
+                    clear_values: vec![Some([0.1, 0.1, 0.1, 1.0].into()), Some(1f32.into())],
                     ..RenderPassBeginInfo::framebuffer(framebuffer.clone())
                 },
                 SubpassContents::Inline,
