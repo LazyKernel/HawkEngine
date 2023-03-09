@@ -19,7 +19,9 @@ use vulkano::swapchain::{Swapchain, SwapchainCreateInfo, Surface};
 use vulkano::sync::GpuFuture;
 use vulkano_win::VkSurfaceBuild;
 
+use std::collections::HashMap;
 use std::fs::File;
+use std::io::BufReader;
 use std::sync::Arc;
 use anyhow::{anyhow};
 use winit::dpi::LogicalSize;
@@ -273,42 +275,8 @@ impl Vulkan {
         ).unwrap()
     }
     
-    pub fn construct_triangle(&self) -> (
-        Arc<CpuAccessibleBuffer<[Vertex]>>, 
-        Arc<CpuAccessibleBuffer<[u16]>>
-    ) {
-        let v1 = Vertex { position: [-0.5, -0.5, 0.0], color: [1.0, 0.0, 0.0], tex_coord: [1.0, 0.0] };
-        let v2 = Vertex { position: [ 0.5, -0.5, 0.0], color: [0.0, 1.0, 0.0], tex_coord: [0.0, 0.0] };
-        let v3 = Vertex { position: [ 0.5,  0.5, 0.0], color: [0.0, 0.0, 1.0], tex_coord: [0.0, 1.0] };
-        let v4 = Vertex { position: [-0.5,  0.5, 0.0], color: [1.0, 1.0, 1.0], tex_coord: [1.0, 1.0] };
-    
-        let indices: [u16; 6] = [0, 1, 2, 2, 3, 0];
-    
-        let vertex_buffer = CpuAccessibleBuffer::from_iter(
-            &self.buffer_memory_allocator,
-            BufferUsage {
-                vertex_buffer: true,
-                ..Default::default()
-            },
-            false,
-            vec![v1, v2, v3, v4].into_iter()
-        ).unwrap();
-    
-        let index_buffer = CpuAccessibleBuffer::from_iter(
-            &self.buffer_memory_allocator,
-            BufferUsage {
-                index_buffer: true,
-                ..Default::default()
-            },
-            false,
-            indices.into_iter()
-        ).unwrap();
-    
-        return (vertex_buffer, index_buffer);
-    }
-    
     pub fn load_image(&self) -> (Arc<ImageView<ImmutableImage>>, Arc<Sampler>) {
-        let image = File::open("resources/nice.png").unwrap();
+        let image = File::open("resources/viking_room.png").unwrap();
 
         let decoder = png::Decoder::new(image);
         let mut reader = decoder.read_info().unwrap();
@@ -367,6 +335,80 @@ impl Vulkan {
         return (texture, sampler);
     }
 
+    pub fn load_model(&self) -> (
+        Arc<CpuAccessibleBuffer<[Vertex]>>, 
+        Arc<CpuAccessibleBuffer<[u32]>>
+    ) {
+        let mut reader = BufReader::new(File::open("resources/viking_room.obj").unwrap());
+
+        let (models, _) = tobj::load_obj_buf(
+            &mut reader, 
+            &tobj::LoadOptions { triangulate: true, single_index: true, ..Default::default() }, 
+            |_| Ok(Default::default())
+        ).unwrap();
+
+        let mut vertices: Vec<Vertex> = Vec::with_capacity(1000);
+        let mut indices: Vec<u32> = Vec::with_capacity(1000);
+        let mut unique_vertices = HashMap::new();
+        for model in &models {
+            for index in &model.mesh.indices {
+                let pos_offset = (3 * index) as usize;
+                let normal_offset = (3 * index) as usize;
+                let tex_coord_offset = (2 * index) as usize;
+
+                let vertex = Vertex {
+                    position: [
+                        model.mesh.positions[pos_offset],
+                        model.mesh.positions[pos_offset + 1], 
+                        model.mesh.positions[pos_offset + 2]
+                    ],
+                    normal: [
+                        model.mesh.normals[normal_offset],
+                        model.mesh.normals[normal_offset + 1], 
+                        model.mesh.normals[normal_offset + 2]
+                    ],
+                    color: [1.0, 1.0, 1.0],
+                    tex_coord: [
+                        model.mesh.texcoords[tex_coord_offset], 
+                        1.0 - model.mesh.texcoords[tex_coord_offset + 1]
+                    ]
+                };
+
+                if let Some(index) = unique_vertices.get(&vertex) {
+                    indices.push(*index as u32);
+                }
+                else {
+                    let index = vertices.len();
+                    unique_vertices.insert(vertex, index);
+                    vertices.push(vertex);
+                    indices.push(index as u32);
+                }
+            }
+        };
+
+        let vertex_buffer = CpuAccessibleBuffer::from_iter(
+            &self.buffer_memory_allocator,
+            BufferUsage {
+                vertex_buffer: true,
+                ..Default::default()
+            },
+            false,
+            vertices.into_iter()
+        ).unwrap();
+    
+        let index_buffer = CpuAccessibleBuffer::from_iter(
+            &self.buffer_memory_allocator,
+            BufferUsage {
+                index_buffer: true,
+                ..Default::default()
+            },
+            false,
+            indices.into_iter()
+        ).unwrap();
+    
+        return (vertex_buffer, index_buffer);
+    }
+
     pub fn create_view_ubo_pool(&self) -> Arc<CpuBufferPool<UniformBufferObject>> {
         CpuBufferPool::<UniformBufferObject>::new(
             self.buffer_memory_allocator.clone(),
@@ -397,7 +439,7 @@ impl Vulkan {
         pipeline: &Arc<GraphicsPipeline>,
         framebuffer: &Arc<Framebuffer>,
         vertex_buffer: &Arc<CpuAccessibleBuffer<[Vertex]>>,
-        index_buffer: &Arc<CpuAccessibleBuffer<[u16]>>,
+        index_buffer: &Arc<CpuAccessibleBuffer<[u32]>>,
         view_ubo: &Arc<CpuBufferPoolSubbuffer<UniformBufferObject>>,
         descriptor_set_texture: &Arc<PersistentDescriptorSet>
     ) -> Arc<PrimaryAutoCommandBuffer> {
@@ -421,7 +463,7 @@ impl Vulkan {
         builder
             .begin_render_pass(
                 RenderPassBeginInfo {
-                    clear_values: vec![Some([0.1, 0.1, 0.1, 1.0].into()), Some(1f32.into())],
+                    clear_values: vec![Some([0.0, 0.0, 0.0, 1.0].into()), Some(1f32.into())],
                     ..RenderPassBeginInfo::framebuffer(framebuffer.clone())
                 },
                 SubpassContents::Inline,

@@ -108,7 +108,7 @@ fn main() {
     let mut app = App::create(&event_loop);
 
     // TODO: move away
-    let (vertex_buffer, index_buffer) = app.vulkan.construct_triangle();
+    let (vertex_buffer, index_buffer) = app.vulkan.load_model();
     let (texture, sampler) = app.vulkan.load_image();
     // Setup texture descriptor set
     let layout_texture = app.pipeline.layout().set_layouts().get(1).unwrap();
