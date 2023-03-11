@@ -56,6 +56,20 @@ pub struct Vulkan {
 }
 
 impl Vulkan {
+    /*
+    The functions should be called in the correct order
+    1.  Create Vulkan instance using create_instance
+    2.  Create Vulkan surface and winit window using create_surface
+    3.  Select the best available physical device (gpu) using select_physical_device
+    4.  Create Vulkan device using create_device
+    5.  Call the constructor of this class
+    6.  Create the swapchain images for n buffering using create_swapchain
+    7.  Create the render pass, we only use a single one at the moment using create_render_pass
+    8.  Create the framebuffers for each swapchain image using create_framebuffers
+    9.  Create the Vulkan graphics pipeline using create_pipeline
+    10. Create the CpuBuffer Pool for allocating UniformBufferObjects for the view matrix using create_ubo_pool
+    */
+
     pub fn new(device: &Arc<Device>, queue: &Arc<Queue>) -> Self {
         let buffer_memory_allocator = Arc::new(StandardMemoryAllocator::new_default(device.clone()));
         let command_buffer_allocator = Arc::new(StandardCommandBufferAllocator::new(device.clone(), StandardCommandBufferAllocatorCreateInfo::default()));
@@ -65,14 +79,11 @@ impl Vulkan {
         Self { device: device.clone(), queue: queue.clone(), buffer_memory_allocator, command_buffer_allocator, fast_buffer_memory_allocator, descriptor_set_allocator }
     }
 
-    pub fn create_surface(instance: &Arc<Instance>, event_loop: &EventLoop<()>) -> Arc<Surface> {
-        WindowBuilder::new()
-        .with_title("HawkEngine")
-        .with_inner_size(LogicalSize::new(1024, 768))
-        .build_vk_surface(event_loop, instance.clone())
-        .unwrap()
-    }
-    
+
+    //--------------------------
+    // Static functions
+    //--------------------------
+
     pub fn create_instance(debug: bool) -> Arc<Instance> {
         let library = VulkanLibrary::new().unwrap();
         let required_extensions = vulkano_win::required_extensions(&library);
@@ -109,6 +120,14 @@ impl Vulkan {
     
         Instance::new(library, create_info)
             .map_err(|b| anyhow!("{}", b)).expect("Failed creating instance")
+    }
+
+    pub fn create_surface(instance: &Arc<Instance>, event_loop: &EventLoop<()>) -> Arc<Surface> {
+        WindowBuilder::new()
+        .with_title("HawkEngine")
+        .with_inner_size(LogicalSize::new(1024, 768))
+        .build_vk_surface(event_loop, instance.clone())
+        .unwrap()
     }
     
     pub fn select_physical_device(instance: &Arc<Instance>, surface: &Arc<Surface>, device_extensions: &DeviceExtensions) -> (Arc<PhysicalDevice>, u32) {
@@ -153,51 +172,41 @@ impl Vulkan {
         return (device, queues.next().unwrap());
     }
 
-    /*fn create_command_pool(device: &Arc<Device>, queue: &Arc<Queue>) -> Arc<CommandPool> {
-        Arc::new(CommandPool::new(device.clone(), CommandPoolCreateInfo {
-            queue_family_index: queue.queue_family_index(),
-            // resetting the created buffers every frame, but only creating once
-            transient: false,
-            // allows resetting the created command buffers
-            reset_command_buffer: true,
-            ..Default::default()
-        }).unwrap())
-    }*/
+    //--------------------------
+    // Member functions
+    //--------------------------
+
+    pub fn create_swapchain(&self, physical: &Arc<PhysicalDevice>, surface: &Arc<Surface>) -> (Arc<Swapchain>, Vec<Arc<SwapchainImage>>) {
+        let caps = physical
+            .surface_capabilities(surface, Default::default())
+            .expect("failed to get surface capabilities");
     
-    pub fn create_pipeline(
-        &self,
-        render_pass: &Arc<RenderPass>, 
-        surface: &Arc<Surface>, 
-        viewport: Option<&Viewport>
-    ) -> Arc<GraphicsPipeline> {
-        let vs = shaders::vs::load(self.device.clone()).expect("Failed to create vs");
-        let fs = shaders::fs::load(self.device.clone()).expect("Failed to load fs");
+        let dimensions = surface.object().unwrap().downcast_ref::<Window>().unwrap().inner_size();
+        let composite_alpha = caps.supported_composite_alpha.iter().next().unwrap();
+        let image_format = Some(
+            physical
+                .surface_formats(surface, Default::default())
+                .unwrap()[0]
+                .0,
+        );
     
-        let viewport_value = match viewport {
-            Some(viewport) => viewport.clone(),
-            None => Viewport {
-                origin: [0.0, 0.0],
-                dimensions: surface.object().unwrap().downcast_ref::<Window>().unwrap().inner_size().into(),
-                depth_range: 0.0..1.0,
+        Swapchain::new(
+            self.device.clone(),
+            surface.clone(),
+            SwapchainCreateInfo {
+                min_image_count: caps.min_image_count + 1,
+                image_format,
+                image_extent: dimensions.into(),
+                image_usage: ImageUsage {
+                    color_attachment: true,
+                    ..Default::default()
+                },
+                composite_alpha,
+                ..Default::default()
             }
-        };
-    
-        let subpass = Subpass::from(render_pass.clone(), 0).unwrap();
-        let pipeline = GraphicsPipeline::start()
-            .vertex_input_state(BuffersDefinition::new().vertex::<Vertex>())
-            .vertex_shader(vs.entry_point("main").unwrap(), ())
-            .input_assembly_state(InputAssemblyState::new())
-            .viewport_state(ViewportState::viewport_fixed_scissor_irrelevant([viewport_value]))
-            .fragment_shader(fs.entry_point("main").unwrap(), ())
-            .color_blend_state(ColorBlendState::new(subpass.num_color_attachments()).blend_alpha())
-            .depth_stencil_state(DepthStencilState::simple_depth_test())
-            .render_pass(Subpass::from(render_pass.clone(), 0).unwrap())
-            .build(self.device.clone())
-            .unwrap();
-    
-        return pipeline;
+        ).unwrap()
     }
-    
+
     pub fn create_render_pass(&self, swapchain: &Arc<Swapchain>) -> Arc<RenderPass> {
         vulkano::single_pass_renderpass!(
             self.device.clone(),
@@ -244,36 +253,103 @@ impl Vulkan {
             .collect::<Vec<_>>()
     }
     
-    pub fn create_swapchain(&self, physical: &Arc<PhysicalDevice>, surface: &Arc<Surface>) -> (Arc<Swapchain>, Vec<Arc<SwapchainImage>>) {
-        let caps = physical
-            .surface_capabilities(surface, Default::default())
-            .expect("failed to get surface capabilities");
+    pub fn create_pipeline(
+        &self,
+        render_pass: &Arc<RenderPass>, 
+        surface: &Arc<Surface>, 
+        viewport: Option<&Viewport>
+    ) -> Arc<GraphicsPipeline> {
+        let vs = shaders::vs::load(self.device.clone()).expect("Failed to create vs");
+        let fs = shaders::fs::load(self.device.clone()).expect("Failed to load fs");
     
-        let dimensions = surface.object().unwrap().downcast_ref::<Window>().unwrap().inner_size();
-        let composite_alpha = caps.supported_composite_alpha.iter().next().unwrap();
-        let image_format = Some(
-            physical
-                .surface_formats(surface, Default::default())
-                .unwrap()[0]
-                .0,
-        );
-    
-        Swapchain::new(
-            self.device.clone(),
-            surface.clone(),
-            SwapchainCreateInfo {
-                min_image_count: caps.min_image_count + 1,
-                image_format,
-                image_extent: dimensions.into(),
-                image_usage: ImageUsage {
-                    color_attachment: true,
-                    ..Default::default()
-                },
-                composite_alpha,
-                ..Default::default()
+        let viewport_value = match viewport {
+            Some(viewport) => viewport.clone(),
+            None => Viewport {
+                origin: [0.0, 0.0],
+                dimensions: surface.object().unwrap().downcast_ref::<Window>().unwrap().inner_size().into(),
+                depth_range: 0.0..1.0,
             }
-        ).unwrap()
+        };
+    
+        let subpass = Subpass::from(render_pass.clone(), 0).unwrap();
+        let pipeline = GraphicsPipeline::start()
+            .vertex_input_state(BuffersDefinition::new().vertex::<Vertex>())
+            .vertex_shader(vs.entry_point("main").unwrap(), ())
+            .input_assembly_state(InputAssemblyState::new())
+            .viewport_state(ViewportState::viewport_fixed_scissor_irrelevant([viewport_value]))
+            .fragment_shader(fs.entry_point("main").unwrap(), ())
+            .color_blend_state(ColorBlendState::new(subpass.num_color_attachments()).blend_alpha())
+            .depth_stencil_state(DepthStencilState::simple_depth_test())
+            .render_pass(Subpass::from(render_pass.clone(), 0).unwrap())
+            .build(self.device.clone())
+            .unwrap();
+    
+        return pipeline;
     }
+
+    pub fn create_view_ubo_pool(&self) -> Arc<CpuBufferPool<UniformBufferObject>> {
+        CpuBufferPool::<UniformBufferObject>::new(
+            self.buffer_memory_allocator.clone(),
+            BufferUsage {
+                uniform_buffer: true,
+                ..Default::default()
+            },
+            MemoryUsage::Upload
+        ).into()
+    }
+
+    pub fn create_command_buffer(
+        &self,
+        pipeline: &Arc<GraphicsPipeline>,
+        framebuffer: &Arc<Framebuffer>,
+        vertex_buffer: &Arc<CpuAccessibleBuffer<[Vertex]>>,
+        index_buffer: &Arc<CpuAccessibleBuffer<[u32]>>,
+        view_ubo: &Arc<CpuBufferPoolSubbuffer<UniformBufferObject>>,
+        descriptor_set_texture: &Arc<PersistentDescriptorSet>
+    ) -> Arc<PrimaryAutoCommandBuffer> {
+        // TODO: don't recreate the command buffer anew, but reset and write over the same one
+        // Not gonna optimize yet, since the library seems to have some type of optimizations already
+
+        // Setup MVP descriptor set
+        let layout_view = pipeline.layout().set_layouts().get(0).unwrap();
+        let descriptor_set_view = PersistentDescriptorSet::new(
+            &self.descriptor_set_allocator,
+            layout_view.clone(),
+            [WriteDescriptorSet::buffer(0, view_ubo.clone())]
+        ).unwrap();
+
+        let mut builder = AutoCommandBufferBuilder::primary(
+            &self.command_buffer_allocator,
+            self.queue.queue_family_index(),
+            CommandBufferUsage::MultipleSubmit
+        ).unwrap();
+
+        builder
+            .begin_render_pass(
+                RenderPassBeginInfo {
+                    clear_values: vec![Some([0.0, 0.0, 0.0, 1.0].into()), Some(1f32.into())],
+                    ..RenderPassBeginInfo::framebuffer(framebuffer.clone())
+                },
+                SubpassContents::Inline,
+            )
+            .unwrap()
+            .bind_pipeline_graphics(pipeline.clone())
+            .bind_descriptor_sets(PipelineBindPoint::Graphics, pipeline.layout().clone(), 0, descriptor_set_view.clone())
+            .bind_descriptor_sets(PipelineBindPoint::Graphics, pipeline.layout().clone(), 1, descriptor_set_texture.clone())
+            .bind_vertex_buffers(0, vertex_buffer.clone())
+            .bind_index_buffer(index_buffer.clone())
+            .draw_indexed(index_buffer.len() as u32, 1, 0, 0, 0)
+            .unwrap()
+            .end_render_pass()
+            .unwrap();
+    
+        Arc::new(builder.build().unwrap())
+    }
+
+
+    //--------------------------
+    // Utils
+    //--------------------------
     
     pub fn load_image(&self) -> (Arc<ImageView<ImmutableImage>>, Arc<Sampler>) {
         let image = File::open("resources/viking_room.png").unwrap();
@@ -409,76 +485,5 @@ impl Vulkan {
         return (vertex_buffer, index_buffer);
     }
 
-    pub fn create_view_ubo_pool(&self) -> Arc<CpuBufferPool<UniformBufferObject>> {
-        CpuBufferPool::<UniformBufferObject>::new(
-            self.buffer_memory_allocator.clone(),
-            BufferUsage {
-                uniform_buffer: true,
-                ..Default::default()
-            },
-            MemoryUsage::Upload
-        ).into()
-    }
-
-    /*pub fn create_command_buffers(
-        &self,
-        count: u8
-    ) -> Vec<Arc<CommandPoolAlloc>> {
-        self.command_pool.allocate_command_buffers(CommandBufferAllocateInfo { 
-            level: CommandBufferLevel::Primary, 
-            command_buffer_count: count as u32,
-            ..Default::default()
-        })
-        .unwrap()
-        .map(|v| -> Arc<CommandPoolAlloc> { Arc::new(v) })
-        .collect()
-    }*/
-
-    pub fn create_command_buffer(
-        &self,
-        pipeline: &Arc<GraphicsPipeline>,
-        framebuffer: &Arc<Framebuffer>,
-        vertex_buffer: &Arc<CpuAccessibleBuffer<[Vertex]>>,
-        index_buffer: &Arc<CpuAccessibleBuffer<[u32]>>,
-        view_ubo: &Arc<CpuBufferPoolSubbuffer<UniformBufferObject>>,
-        descriptor_set_texture: &Arc<PersistentDescriptorSet>
-    ) -> Arc<PrimaryAutoCommandBuffer> {
-        // TODO: don't recreate the command buffer anew, but reset and write over the same one
-        // Not gonna optimize yet, since the library seems to have some type of optimizations already
-
-        // Setup MVP descriptor set
-        let layout_view = pipeline.layout().set_layouts().get(0).unwrap();
-        let descriptor_set_view = PersistentDescriptorSet::new(
-            &self.descriptor_set_allocator,
-            layout_view.clone(),
-            [WriteDescriptorSet::buffer(0, view_ubo.clone())]
-        ).unwrap();
-
-        let mut builder = AutoCommandBufferBuilder::primary(
-            &self.command_buffer_allocator,
-            self.queue.queue_family_index(),
-            CommandBufferUsage::MultipleSubmit
-        ).unwrap();
-
-        builder
-            .begin_render_pass(
-                RenderPassBeginInfo {
-                    clear_values: vec![Some([0.0, 0.0, 0.0, 1.0].into()), Some(1f32.into())],
-                    ..RenderPassBeginInfo::framebuffer(framebuffer.clone())
-                },
-                SubpassContents::Inline,
-            )
-            .unwrap()
-            .bind_pipeline_graphics(pipeline.clone())
-            .bind_descriptor_sets(PipelineBindPoint::Graphics, pipeline.layout().clone(), 0, descriptor_set_view.clone())
-            .bind_descriptor_sets(PipelineBindPoint::Graphics, pipeline.layout().clone(), 1, descriptor_set_texture.clone())
-            .bind_vertex_buffers(0, vertex_buffer.clone())
-            .bind_index_buffer(index_buffer.clone())
-            .draw_indexed(index_buffer.len() as u32, 1, 0, 0, 0)
-            .unwrap()
-            .end_render_pass()
-            .unwrap();
     
-        Arc::new(builder.build().unwrap())
-    }
 }
