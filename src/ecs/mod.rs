@@ -2,6 +2,8 @@ use specs::{World, WorldExt, Dispatcher, DispatcherBuilder};
 
 use crate::ecs::components::general::{Transform, Renderable};
 
+use self::components::general::Camera;
+
 pub mod components;
 pub mod resources;
 pub mod systems;
@@ -22,5 +24,6 @@ impl ECS<'_> {
     fn register_components(world: &mut World) {
         world.register::<Transform>();
         world.register::<Renderable>();
+        world.register::<Camera>();
     }
 }

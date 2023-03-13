@@ -3,7 +3,7 @@ use std::sync::Arc;
 use specs::{System, ReadStorage, Read, Write, Entities};
 use vulkano::{command_buffer::{RenderPassBeginInfo, SubpassContents, AutoCommandBufferBuilder, CommandBufferUsage}, descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet}, pipeline::{Pipeline, PipelineBindPoint}, buffer::TypedBufferAccess};
 
-use crate::{ecs::{components::general::{Transform, Renderable, Camera}, resources::{ActiveCamera, RenderData, ProjectionMatrix, CommandBuffer}}, graphics::vulkan::Vulkan, shaders::vs::ty::{VPUniformBufferObject, ModelPushConstants}};
+use crate::{ecs::{components::general::{Transform, Renderable, Camera}, resources::{ActiveCamera, RenderData, ProjectionMatrix, CommandBuffer, RenderDataFrameBuffer}}, shaders::vs::ty::{VPUniformBufferObject, ModelPushConstants}};
 
 pub struct Render;
 
@@ -12,15 +12,15 @@ impl<'a> System<'a> for Render {
         Entities<'a>,
         Option<Read<'a, ActiveCamera>>,
         Option<Read<'a, RenderData>>,
+        Option<Read<'a, RenderDataFrameBuffer>>,
         Write<'a, CommandBuffer>,
-        Option<Read<'a, Arc<Vulkan>>>,
         Read<'a, ProjectionMatrix>,
         ReadStorage<'a, Camera>,
         ReadStorage<'a, Transform>,
         ReadStorage<'a, Renderable>
     );
 
-    fn run(&mut self, (entities, active_cam, render_data, mut command_buffer, vulkan, proj, _camera, transform, renderable): Self::SystemData) {
+    fn run(&mut self, (entities, active_cam, render_data, framebuffer, mut command_buffer, proj, _camera, transform, renderable): Self::SystemData) {
         use specs::Join;
         // Verify we have all dependencies
         // Abort if not
@@ -40,10 +40,10 @@ impl<'a> System<'a> for Render {
             }
         };
 
-        let vulkan = match vulkan {
+        let framebuffer = match framebuffer {
             Some(v) => v,
             None => {
-                eprintln!("Vulkan was none");
+                eprintln!("Framebuffer was none");
                 return
             }
         };
@@ -54,8 +54,8 @@ impl<'a> System<'a> for Render {
 
         // Create a command buffer
         let mut builder = AutoCommandBufferBuilder::primary(
-            &vulkan.command_buffer_allocator,
-            vulkan.queue.queue_family_index(),
+            &render_data.command_buffer_allocator,
+            render_data.queue_family_index,
             CommandBufferUsage::MultipleSubmit
         ).unwrap();
 
@@ -69,7 +69,7 @@ impl<'a> System<'a> for Render {
         // Allocate and write model and view matrix to descriptor set
         let layout_view = render_data.pipeline.layout().set_layouts().get(0).unwrap();
         let descriptor_set_view = PersistentDescriptorSet::new(
-            &vulkan.descriptor_set_allocator,
+            &render_data.descriptor_set_allocator,
             layout_view.clone(),
             [WriteDescriptorSet::buffer(0, view_ubo.clone())]
         ).unwrap();
@@ -78,7 +78,7 @@ impl<'a> System<'a> for Render {
             .begin_render_pass(
                 RenderPassBeginInfo {
                     clear_values: vec![Some([0.0, 0.0, 0.0, 1.0].into()), Some(1f32.into())],
-                    ..RenderPassBeginInfo::framebuffer(render_data.framebuffer.clone())
+                    ..RenderPassBeginInfo::framebuffer(framebuffer.0.clone())
                 },
                 SubpassContents::Inline,
             )
@@ -113,12 +113,12 @@ impl<'a> System<'a> for Render {
             }
         }
 
-        let built_command_buffer = match builder.end_render_pass() {
+        match builder.end_render_pass() {
             Ok(v) => v,
             Err(e) => return eprintln!("Failed ending render pass: {:?}", e)
         };
 
-        let buffer = match built_command_buffer.build() {
+        let buffer = match builder.build() {
             Ok(v) => Arc::new(v),
             Err(e) => return eprintln!("Failed building command buffer: {:?}", e)
         };

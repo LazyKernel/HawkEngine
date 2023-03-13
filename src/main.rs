@@ -17,7 +17,7 @@ mod shaders;
 
 use ecs::ECS;
 use ecs::components::general::{Transform, Camera};
-use ecs::resources::{ProjectionMatrix, ActiveCamera, RenderData, CommandBuffer};
+use ecs::resources::{ProjectionMatrix, ActiveCamera, RenderData, CommandBuffer, RenderDataFrameBuffer};
 use ecs::systems::general::Render;
 use graphics::vulkan::Vulkan;
 use shaders::vs::ty::VPUniformBufferObject;
@@ -139,7 +139,6 @@ fn main() {
 
     // Create ECS classes
     let mut ecs = ECS::new();
-    let mut world: &mut World = &mut ecs.world;
     let mut dispatcher = DispatcherBuilder::new()
         .with_thread_local(Render)
         .build();
@@ -150,7 +149,7 @@ fn main() {
 
     match renderable {
         Ok(v) => {
-            world
+            ecs.world
                 .create_entity()
                 .with(v)
                 .with(Transform::default())
@@ -160,24 +159,25 @@ fn main() {
     }
     
     // Add projection matrix
-    world.insert(ProjectionMatrix(proj));
+    ecs.world.insert(ProjectionMatrix(proj));
     // Add a camera
-    let camera_entity = world
+    let camera_entity = ecs.world
         .create_entity()
         .with(Camera)
         .with(camera_transform)
         .build();
-    world.insert(ActiveCamera(camera_entity));
-    // Add vulkan
-    world.insert(app.vulkan);
+    ecs.world.insert(ActiveCamera(camera_entity));
     // Add initial render data
-    world.insert(RenderData {
+    ecs.world.insert(RenderData {
         pipeline: app.pipeline.clone(),
-        framebuffer: app.framebuffers[0].clone(),
-        ubo_pool: app.ubo_pool.clone()
+        ubo_pool: app.ubo_pool.clone(),
+        command_buffer_allocator: app.vulkan.command_buffer_allocator.clone(),
+        descriptor_set_allocator: app.vulkan.descriptor_set_allocator.clone(),
+        queue_family_index: app.vulkan.queue.queue_family_index()
     });
+    ecs.world.insert(RenderDataFrameBuffer(app.framebuffers[0].clone()));
     // Add empty command buffer
-    world.insert(CommandBuffer { command_buffer: None });
+    ecs.world.insert(CommandBuffer { command_buffer: None });
 
     // look into this when rendering https://www.reddit.com/r/vulkan/comments/e7n5b6/drawing_multiple_objects/
     event_loop.run(move |event, _, control_flow| {
@@ -237,7 +237,7 @@ fn main() {
                         // convert from OpenGL to Vulkan coordinates
                         proj[(1, 1)] *= -1.0;
 
-                        let mut projection_mat = world.write_resource::<ProjectionMatrix>();
+                        let mut projection_mat = ecs.world.write_resource::<ProjectionMatrix>();
                         *projection_mat = ProjectionMatrix(proj);
                     }
                 }
@@ -259,18 +259,14 @@ fn main() {
                 // Own scope for immutable reference
                 {
                     // Update render data
-                    let mut render_data = world.write_resource::<RenderData>();
-                    *render_data = RenderData {
-                        pipeline: app.pipeline.clone(),
-                        framebuffer: app.framebuffers[image_i].clone(),
-                        ubo_pool: app.ubo_pool.clone()
-                    };
+                    let mut framebuffer = ecs.world.write_resource::<RenderDataFrameBuffer>();
+                    *framebuffer = RenderDataFrameBuffer(app.framebuffers[image_i].clone());
                 }
 
-                dispatcher.dispatch(world);
-                world.maintain();
+                dispatcher.dispatch(&ecs.world);
+                ecs.world.maintain();
 
-                let command_buffer = world.read_resource::<CommandBuffer>();
+                let command_buffer = ecs.world.read_resource::<CommandBuffer>();
                 let command_buffer = match &command_buffer.command_buffer {
                     Some(v) => v,
                     None => return eprintln!("Command buffer received from ECS was none, skipping rendering for this frame")
