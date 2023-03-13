@@ -1,6 +1,7 @@
 use crate::data_structures::graphics::Vertex;
+use crate::ecs::components::general::Renderable;
 use crate::shaders;
-use crate::shaders::vs::ty::UniformBufferObject;
+use crate::shaders::vs::ty::VPUniformBufferObject;
 use vulkano::buffer::cpu_pool::CpuBufferPoolSubbuffer;
 use vulkano::command_buffer::allocator::{StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo};
 use vulkano::descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet, DescriptorSet};
@@ -45,11 +46,14 @@ use vulkano::image::{ImageUsage, SwapchainImage, ImmutableImage, ImageDimensions
 use vulkano::image::view::ImageView;
 use vulkano::render_pass::{RenderPass, Framebuffer, FramebufferCreateInfo, Subpass};
 
+#[derive(Clone)]
 pub struct Vulkan {
     device: Arc<Device>,
-    queue: Arc<Queue>,
+    pub queue: Arc<Queue>,
+    sampler: Arc<Sampler>,
+    pipelines: HashMap<String, Arc<GraphicsPipeline>>,
     buffer_memory_allocator: Arc<StandardMemoryAllocator>,
-    command_buffer_allocator: Arc<StandardCommandBufferAllocator>,
+    pub command_buffer_allocator: Arc<StandardCommandBufferAllocator>,
     fast_buffer_memory_allocator: Arc<FastMemoryAllocator>,
     // TODO: temporarily public
     pub descriptor_set_allocator: Arc<StandardDescriptorSetAllocator>
@@ -76,7 +80,26 @@ impl Vulkan {
         let fast_buffer_memory_allocator = Arc::new(FastMemoryAllocator::new_default(device.clone()));
         let descriptor_set_allocator = Arc::new(StandardDescriptorSetAllocator::new(device.clone()));
 
-        Self { device: device.clone(), queue: queue.clone(), buffer_memory_allocator, command_buffer_allocator, fast_buffer_memory_allocator, descriptor_set_allocator }
+        let sampler = Sampler::new(
+            device.clone(),
+            SamplerCreateInfo {
+                mag_filter: Filter::Linear,
+                min_filter: Filter::Linear,
+                address_mode: [SamplerAddressMode::Repeat; 3],
+                ..Default::default()
+            }
+        ).unwrap();
+
+        Self { 
+            device: device.clone(), 
+            queue: queue.clone(), 
+            sampler: sampler.clone(),
+            pipelines: HashMap::new(),
+            buffer_memory_allocator, 
+            command_buffer_allocator, 
+            fast_buffer_memory_allocator,
+            descriptor_set_allocator
+        }
     }
 
 
@@ -254,9 +277,10 @@ impl Vulkan {
     }
     
     pub fn create_pipeline(
-        &self,
+        &mut self,
+        pipeline_name: &str,
         render_pass: &Arc<RenderPass>, 
-        surface: &Arc<Surface>, 
+        surface: &Arc<Surface>,
         viewport: Option<&Viewport>
     ) -> Arc<GraphicsPipeline> {
         let vs = shaders::vs::load(self.device.clone()).expect("Failed to create vs");
@@ -284,11 +308,14 @@ impl Vulkan {
             .build(self.device.clone())
             .unwrap();
     
+        // Insert to pipelines so we can use it later without needing a reference
+        self.pipelines.insert(pipeline_name.into(), pipeline.clone());
+
         return pipeline;
     }
 
-    pub fn create_view_ubo_pool(&self) -> Arc<CpuBufferPool<UniformBufferObject>> {
-        CpuBufferPool::<UniformBufferObject>::new(
+    pub fn create_view_ubo_pool(&self) -> Arc<CpuBufferPool<VPUniformBufferObject>> {
+        CpuBufferPool::<VPUniformBufferObject>::new(
             self.buffer_memory_allocator.clone(),
             BufferUsage {
                 uniform_buffer: true,
@@ -304,7 +331,7 @@ impl Vulkan {
         framebuffer: &Arc<Framebuffer>,
         vertex_buffer: &Arc<CpuAccessibleBuffer<[Vertex]>>,
         index_buffer: &Arc<CpuAccessibleBuffer<[u32]>>,
-        view_ubo: &Arc<CpuBufferPoolSubbuffer<UniformBufferObject>>,
+        view_ubo: &Arc<CpuBufferPoolSubbuffer<VPUniformBufferObject>>,
         descriptor_set_texture: &Arc<PersistentDescriptorSet>
     ) -> Arc<PrimaryAutoCommandBuffer> {
         // TODO: don't recreate the command buffer anew, but reset and write over the same one
@@ -351,8 +378,9 @@ impl Vulkan {
     // Utils
     //--------------------------
     
-    pub fn load_image(&self) -> (Arc<ImageView<ImmutableImage>>, Arc<Sampler>) {
-        let image = File::open("resources/viking_room.png").unwrap();
+    pub fn load_image(&self, path: &str) -> (Arc<ImageView<ImmutableImage>>, Box<dyn GpuFuture>) {
+        // TODO: add error handling
+        let image = File::open(path).unwrap();
 
         let decoder = png::Decoder::new(image);
         let mut reader = decoder.read_info().unwrap();
@@ -398,24 +426,15 @@ impl Vulkan {
 
         let texture = ImageView::new_default(image).unwrap();
 
-        let sampler = Sampler::new(
-            self.device.clone(),
-            SamplerCreateInfo {
-                mag_filter: Filter::Linear,
-                min_filter: Filter::Linear,
-                address_mode: [SamplerAddressMode::Repeat; 3],
-                ..Default::default()
-            }
-        ).unwrap();
-
-        return (texture, sampler);
+        return (texture, image_upload);
     }
 
-    pub fn load_model(&self) -> (
+    pub fn load_model(&self, path: &str) -> (
         Arc<CpuAccessibleBuffer<[Vertex]>>, 
         Arc<CpuAccessibleBuffer<[u32]>>
     ) {
-        let mut reader = BufReader::new(File::open("resources/viking_room.obj").unwrap());
+        // TODO: add error handling
+        let mut reader = BufReader::new(File::open(path).unwrap());
 
         let (models, _) = tobj::load_obj_buf(
             &mut reader, 
@@ -486,4 +505,34 @@ impl Vulkan {
     }
 
     
+    pub fn create_renderable(&self, model_name: &str, pipeline_name: Option<String>) -> Result<Renderable, String> {
+        let model_path = format!("resources/{}.obj", model_name);
+        let texture_path = format!("resources/{}.png", model_name);
+        let (vertices, indices) = self.load_model(&model_path);
+        let (texture, image_upload) = self.load_image(&texture_path);
+        // TODO: save image_upload to an array and periodically check if they are finished
+        // Should also probably check that the upload has finished before using it
+
+        let pipeline_name = match pipeline_name {
+            Some(v) => v,
+            None => "default".into()
+        };
+
+        let pipeline = self.pipelines.get(&pipeline_name);
+
+        let pipeline = match pipeline {
+            Some(v) => v,
+            None => return Err(format!("No pipeline called '{}' exists", pipeline_name))
+        };
+
+        let layout_texture = pipeline.layout().set_layouts().get(1).unwrap();
+        let descriptor_set_texture = PersistentDescriptorSet::new(
+            &self.descriptor_set_allocator,
+            layout_texture.clone(),
+            [WriteDescriptorSet::image_view_sampler(0, texture.clone(), self.sampler.clone())]
+        ).unwrap();
+
+        Ok(Renderable { vertex_buffer: vertices, index_buffer: indices, descriptor_set_texture })
+    }
+
 }

@@ -4,7 +4,7 @@ use bytemuck::{Pod, Zeroable};
 use vulkano;
 
 #[repr(C)]
-#[derive(Default, Copy, Clone, Zeroable, Pod)]
+#[derive(Default, Debug, Copy, Clone, Zeroable, Pod)]
 pub struct Vertex {
     pub position: [f32; 3],
     pub normal: [f32; 3],

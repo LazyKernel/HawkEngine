@@ -11,11 +11,17 @@
 )]
 
 mod data_structures;
-mod shaders;
+mod ecs;
 mod graphics;
+mod shaders;
 
+use ecs::ECS;
+use ecs::components::general::{Transform, Camera};
+use ecs::resources::{ProjectionMatrix, ActiveCamera, RenderData, CommandBuffer};
+use ecs::systems::general::Render;
 use graphics::vulkan::Vulkan;
-use shaders::vs::ty::UniformBufferObject;
+use shaders::vs::ty::VPUniformBufferObject;
+use specs::{World, WorldExt, Builder, DispatcherBuilder};
 use vulkano::buffer::CpuBufferPool;
 use vulkano::descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet};
 use vulkano::device::physical::{PhysicalDevice};
@@ -40,10 +46,6 @@ use vulkano::device::{
 use vulkano::image::{SwapchainImage};
 use vulkano::render_pass::{RenderPass, Framebuffer};
 
-const VALIDATION_LAYER: &[&str] = &[
-    "VK_LAYER_LUNARG_standard_validation"
-];
-
 #[cfg(all(debug_assertions))]
 const ENABLE_VALIDATION_LAYERS: bool = true;
 #[cfg(not(debug_assertions))]
@@ -60,7 +62,7 @@ struct App {
     surface: Arc<Surface>,
     swapchain: Arc<Swapchain>,
     images: Vec<Arc<SwapchainImage>>,
-    ubo_pool: Arc<CpuBufferPool<UniformBufferObject>>,
+    ubo_pool: Arc<CpuBufferPool<VPUniformBufferObject>>,
 
     vulkan: Vulkan,
 
@@ -79,12 +81,12 @@ impl App {
         let (physical, queue_index) = Vulkan::select_physical_device(&instance, &surface, &device_extensions);
         let (device, queue) = Vulkan::create_device(&physical, queue_index, &device_extensions);
 
-        let vulkan = Vulkan::new(&device, &queue);
+        let mut vulkan = Vulkan::new(&device, &queue);
 
         let (swapchain, images) = vulkan.create_swapchain(&physical, &surface);
         let render_pass = vulkan.create_render_pass(&swapchain);
         let framebuffers= vulkan.create_framebuffers(&render_pass, &images);
-        let pipeline = vulkan.create_pipeline(&render_pass, &surface, None);
+        let pipeline = vulkan.create_pipeline("default", &render_pass, &surface, None);
         let ubo_pool = vulkan.create_view_ubo_pool();
         return Self { instance, device, physical, queue, render_pass, framebuffers, pipeline, surface, swapchain, images, ubo_pool, vulkan, start: Instant::now() };
     }
@@ -107,17 +109,6 @@ fn main() {
     let event_loop = EventLoop::new();
     let mut app = App::create(&event_loop);
 
-    // TODO: move away
-    let (vertex_buffer, index_buffer) = app.vulkan.load_model();
-    let (texture, sampler) = app.vulkan.load_image();
-    // Setup texture descriptor set
-    let layout_texture = app.pipeline.layout().set_layouts().get(1).unwrap();
-    let descriptor_set_texture = PersistentDescriptorSet::new(
-        &app.vulkan.descriptor_set_allocator,
-        layout_texture.clone(),
-        [WriteDescriptorSet::image_view_sampler(0, texture.clone(), sampler.clone())]
-    ).unwrap();
-
     let frames_in_flight = app.images.len();
     let mut fences: Vec<Option<Arc<FenceSignalFuture<_>>>> = vec![None; frames_in_flight];
     let mut previous_fence_i = 0;
@@ -125,6 +116,68 @@ fn main() {
     let mut destroying = false;
     let mut window_resized = false;
     let mut recreate_swapchain = false;
+
+    let mut proj = nalgebra_glm::perspective(
+        app.swapchain.image_extent()[0] as f32 / app.swapchain.image_extent()[1] as f32,
+        nalgebra_glm::radians(&nalgebra_glm::vec1(45.0))[0],
+        0.1,
+        10.0,
+    );
+    // convert from OpenGL to Vulkan coordinates
+    proj[(1, 1)] *= -1.0;
+
+    let pos = nalgebra_glm::vec3(2.0, 2.0, 2.0);
+    let rot = nalgebra_glm::quat_look_at(
+        &nalgebra_glm::vec3(-2.0, -2.0, -2.0),
+        &nalgebra_glm::vec3(0.0, 0.0, 1.0),
+    );
+    let camera_transform = Transform {
+        pos,
+        rot,
+        ..Default::default()
+    };
+
+    // Create ECS classes
+    let mut ecs = ECS::new();
+    let mut world: &mut World = &mut ecs.world;
+    let mut dispatcher = DispatcherBuilder::new()
+        .with_thread_local(Render)
+        .build();
+        
+
+    // TODO: move elsewhere
+    let renderable = app.vulkan.create_renderable("viking_room", Some("default".into()));
+
+    match renderable {
+        Ok(v) => {
+            world
+                .create_entity()
+                .with(v)
+                .with(Transform::default())
+                .build();
+        }
+        Err(e) => println!("Failed creating viking_room renderable: {:?}", e)
+    }
+    
+    // Add projection matrix
+    world.insert(ProjectionMatrix(proj));
+    // Add a camera
+    let camera_entity = world
+        .create_entity()
+        .with(Camera)
+        .with(camera_transform)
+        .build();
+    world.insert(ActiveCamera(camera_entity));
+    // Add vulkan
+    world.insert(app.vulkan);
+    // Add initial render data
+    world.insert(RenderData {
+        pipeline: app.pipeline.clone(),
+        framebuffer: app.framebuffers[0].clone(),
+        ubo_pool: app.ubo_pool.clone()
+    });
+    // Add empty command buffer
+    world.insert(CommandBuffer { command_buffer: None });
 
     // look into this when rendering https://www.reddit.com/r/vulkan/comments/e7n5b6/drawing_multiple_objects/
     event_loop.run(move |event, _, control_flow| {
@@ -169,10 +222,23 @@ fn main() {
                             depth_range: 0.0..1.0,
                         };
 
-                        let new_pipeline = app.vulkan.create_pipeline(&app.render_pass, &app.surface, Some(&viewport));
+                        let new_pipeline = app.vulkan.create_pipeline("default", &app.render_pass, &app.surface, Some(&viewport));
                         app.images = new_images;
                         app.pipeline = new_pipeline;
                         app.framebuffers = new_framebuffers;
+
+                        // Recreate projection matrix
+                        proj = nalgebra_glm::perspective(
+                            app.swapchain.image_extent()[0] as f32 / app.swapchain.image_extent()[1] as f32,
+                            nalgebra_glm::radians(&nalgebra_glm::vec1(45.0))[0],
+                            0.1,
+                            10.0,
+                        );
+                        // convert from OpenGL to Vulkan coordinates
+                        proj[(1, 1)] *= -1.0;
+
+                        let mut projection_mat = world.write_resource::<ProjectionMatrix>();
+                        *projection_mat = ProjectionMatrix(proj);
                     }
                 }
 
@@ -190,41 +256,25 @@ fn main() {
                     recreate_swapchain = true;
                 }
 
-                // Set up ubo data, currently just the MVP matrices
-                let time = app.start.elapsed().as_secs_f32();
-                let model = nalgebra_glm::rotate(
-                    &nalgebra_glm::identity(), 
-                    time * nalgebra_glm::radians(&nalgebra_glm::vec1(90.0))[0], 
-                    &nalgebra_glm::vec3(0.0, 0.0, 1.0)
-                );
-                let view = nalgebra_glm::look_at(
-                    &nalgebra_glm::vec3(2.0, 2.0, 2.0),
-                &nalgebra_glm::vec3(0.0, 0.0, 0.0),
-                    &nalgebra_glm::vec3(0.0, 0.0, 1.0),
-                );
-                let mut proj = nalgebra_glm::perspective(
-                    app.swapchain.image_extent()[0] as f32 / app.swapchain.image_extent()[1] as f32,
-                    nalgebra_glm::radians(&nalgebra_glm::vec1(45.0))[0],
-                    0.1,
-                    10.0,
-                );
-                // convert from OpenGL to Vulkan coordinates
-                proj[(1, 1)] *= -1.0;
-                let ubo_data = UniformBufferObject {
-                    model: model.into(),
-                    view: view.into(),
-                    proj: proj.into()
-                };
-                let view_ubo = app.ubo_pool.from_data(ubo_data).unwrap();
+                // Own scope for immutable reference
+                {
+                    // Update render data
+                    let mut render_data = world.write_resource::<RenderData>();
+                    *render_data = RenderData {
+                        pipeline: app.pipeline.clone(),
+                        framebuffer: app.framebuffers[image_i].clone(),
+                        ubo_pool: app.ubo_pool.clone()
+                    };
+                }
 
-                let command_buffer = app.vulkan.create_command_buffer(
-                    &app.pipeline, 
-                    &app.framebuffers[image_i], 
-                    &vertex_buffer, 
-                    &index_buffer, 
-                    &view_ubo,
-                    &descriptor_set_texture,
-                );
+                dispatcher.dispatch(world);
+                world.maintain();
+
+                let command_buffer = world.read_resource::<CommandBuffer>();
+                let command_buffer = match &command_buffer.command_buffer {
+                    Some(v) => v,
+                    None => return eprintln!("Command buffer received from ECS was none, skipping rendering for this frame")
+                };
 
                 if let Some(image_fence) = &fences[image_i] {
                     image_fence.wait(None).unwrap();
