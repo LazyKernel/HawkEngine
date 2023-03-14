@@ -147,10 +147,10 @@ impl Vulkan {
 
     pub fn create_surface(instance: &Arc<Instance>, event_loop: &EventLoop<()>) -> Arc<Surface> {
         WindowBuilder::new()
-        .with_title("HawkEngine")
-        .with_inner_size(LogicalSize::new(1024, 768))
-        .build_vk_surface(event_loop, instance.clone())
-        .unwrap()
+            .with_title("HawkEngine")
+            .with_inner_size(LogicalSize::new(1024, 768))
+            .build_vk_surface(event_loop, instance.clone())
+            .unwrap()
     }
     
     pub fn select_physical_device(instance: &Arc<Instance>, surface: &Arc<Surface>, device_extensions: &DeviceExtensions) -> (Arc<PhysicalDevice>, u32) {

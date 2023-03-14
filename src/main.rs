@@ -16,9 +16,10 @@ mod graphics;
 mod shaders;
 
 use ecs::ECS;
-use ecs::components::general::{Transform, Camera};
+use ecs::components::general::{Transform, Camera, Movement};
 use ecs::resources::{ProjectionMatrix, ActiveCamera, RenderData, CommandBuffer, RenderDataFrameBuffer};
-use ecs::systems::general::Render;
+use ecs::systems::general::PlayerInput;
+use ecs::systems::render::Render;
 use graphics::vulkan::Vulkan;
 use shaders::vs::ty::VPUniformBufferObject;
 use specs::{World, WorldExt, Builder, DispatcherBuilder};
@@ -30,12 +31,13 @@ use vulkano::pipeline::graphics::viewport::{Viewport};
 use vulkano::swapchain::{Swapchain, SwapchainCreateInfo, Surface, SwapchainCreationError, acquire_next_image, AcquireError, SwapchainPresentInfo};
 use vulkano::sync::{self, GpuFuture, FenceSignalFuture};
 use vulkano::sync::FlushError;
+use winit_input_helper::WinitInputHelper;
 
 use std::sync::Arc;
 use std::time::Instant;
-use winit::event::{Event, WindowEvent};
+use winit::event::{Event, WindowEvent, VirtualKeyCode};
 use winit::event_loop::{ControlFlow, EventLoop};
-use winit::window::{Window};
+use winit::window::{Window, CursorGrabMode};
 use vulkano::instance::{
     Instance
 };
@@ -105,6 +107,8 @@ impl App {
 fn main() {
     pretty_env_logger::init();
 
+    let mut input = WinitInputHelper::new();
+
     // App
     let event_loop = EventLoop::new();
     let mut app = App::create(&event_loop);
@@ -114,14 +118,13 @@ fn main() {
     let mut previous_fence_i = 0;
 
     let mut destroying = false;
-    let mut window_resized = false;
     let mut recreate_swapchain = false;
 
     let mut proj = nalgebra_glm::perspective(
         app.swapchain.image_extent()[0] as f32 / app.swapchain.image_extent()[1] as f32,
         nalgebra_glm::radians(&nalgebra_glm::vec1(45.0))[0],
         0.1,
-        10.0,
+        1000.0,
     );
     // convert from OpenGL to Vulkan coordinates
     proj[(1, 1)] *= -1.0;
@@ -129,7 +132,7 @@ fn main() {
     let pos = nalgebra_glm::vec3(2.0, 2.0, 2.0);
     let rot = nalgebra_glm::quat_look_at(
         &nalgebra_glm::vec3(-2.0, -2.0, -2.0),
-        &nalgebra_glm::vec3(0.0, 0.0, 1.0),
+        &nalgebra_glm::vec3(0.0, -1.0, 0.0),
     );
     let camera_transform = Transform {
         pos,
@@ -140,6 +143,7 @@ fn main() {
     // Create ECS classes
     let mut ecs = ECS::new();
     let mut dispatcher = DispatcherBuilder::new()
+        .with(PlayerInput, "player_input", &[])
         .with_thread_local(Render)
         .build();
         
@@ -158,6 +162,8 @@ fn main() {
         Err(e) => println!("Failed creating viking_room renderable: {:?}", e)
     }
     
+    // Add initial input
+    ecs.world.insert(Arc::new(input.clone()));
     // Add projection matrix
     ecs.world.insert(ProjectionMatrix(proj));
     // Add a camera
@@ -165,6 +171,7 @@ fn main() {
         .create_entity()
         .with(Camera)
         .with(camera_transform)
+        .with(Movement {speed: 0.1, sensitivity: 0.01, yaw: 0.0, pitch: 0.0})
         .build();
     ecs.world.insert(ActiveCamera(camera_entity));
     // Add initial render data
@@ -181,147 +188,159 @@ fn main() {
 
     // look into this when rendering https://www.reddit.com/r/vulkan/comments/e7n5b6/drawing_multiple_objects/
     event_loop.run(move |event, _, control_flow| {
-        //*control_flow = ControlFlow::Poll;
-        match event {
-            // Render a frame if app not being destroyed
-            Event::MainEventsCleared if !destroying => {
-                if window_resized || recreate_swapchain {
-                    recreate_swapchain = false;
-
-                    let new_dimensions = app.surface.object().unwrap().downcast_ref::<Window>().unwrap().inner_size();
-
-                    // ignore rendering if one of the dimensions is 0
-                    if new_dimensions.height == 0 || new_dimensions.width == 0 {
-                        return
-                    }
-
-                    let (new_swapchain, new_images) = match app.swapchain.recreate(SwapchainCreateInfo {
-                        image_extent: new_dimensions.into(),
-                        ..app.swapchain.create_info()
-                    }) {
-                        Ok(r) => r,
-                        // Apparently the creation can fail if the user keeps resizing
-                        // In that case we can just try to recreate again on the next frame
-                        Err(SwapchainCreationError::ImageExtentNotSupported { .. }) => return,
-                        // Happens when minimized
-                        Err(SwapchainCreationError::ImageExtentZeroLengthDimensions { .. }) => return,
-                        Err(e) => panic!("Failed to recreate swapcahin: {:?}", e),
-                    };
-                    app.swapchain = new_swapchain;
-                    let new_framebuffers = app.vulkan.create_framebuffers(
-                        &app.render_pass,
-                        &new_images
-                    );
-
-                    if window_resized {
-                        window_resized = false;
-
-                        let viewport = Viewport {
-                            origin: [0.0, 0.0],
-                            dimensions: new_dimensions.into(),
-                            depth_range: 0.0..1.0,
-                        };
-
-                        let new_pipeline = app.vulkan.create_pipeline("default", &app.render_pass, &app.surface, Some(&viewport));
-                        app.images = new_images;
-                        app.pipeline = new_pipeline;
-                        app.framebuffers = new_framebuffers;
-
-                        // Recreate projection matrix
-                        proj = nalgebra_glm::perspective(
-                            app.swapchain.image_extent()[0] as f32 / app.swapchain.image_extent()[1] as f32,
-                            nalgebra_glm::radians(&nalgebra_glm::vec1(45.0))[0],
-                            0.1,
-                            10.0,
-                        );
-                        // convert from OpenGL to Vulkan coordinates
-                        proj[(1, 1)] *= -1.0;
-
-                        let mut projection_mat = ecs.world.write_resource::<ProjectionMatrix>();
-                        *projection_mat = ProjectionMatrix(proj);
-                    }
-                }
-
-                let (image_i, suboptimal, acquire_future) =
-                    match acquire_next_image(app.swapchain.clone(), None) {
-                        Ok(r) => (usize::try_from(r.0).unwrap(), r.1, r.2),
-                        Err(AcquireError::OutOfDate) => {
-                            recreate_swapchain = true;
-                            return;
-                        }
-                        Err(e) => panic!("Failed to acquire next image: {:?}", e),
-                    };
-                
-                if suboptimal {
-                    recreate_swapchain = true;
-                }
-
-                // Own scope for immutable reference
-                {
-                    // Update render data
-                    let mut framebuffer = ecs.world.write_resource::<RenderDataFrameBuffer>();
-                    *framebuffer = RenderDataFrameBuffer(app.framebuffers[image_i].clone());
-                }
-
-                dispatcher.dispatch(&ecs.world);
-                ecs.world.maintain();
-
-                let command_buffer = ecs.world.read_resource::<CommandBuffer>();
-                let command_buffer = match &command_buffer.command_buffer {
-                    Some(v) => v,
-                    None => return eprintln!("Command buffer received from ECS was none, skipping rendering for this frame")
-                };
-
-                if let Some(image_fence) = &fences[image_i] {
-                    image_fence.wait(None).unwrap();
-                }
-
-                let previous_future = match fences[previous_fence_i].clone() {
-                    None => {
-                        let mut now = sync::now(app.device.clone());
-                        now.cleanup_finished();
-
-                        now.boxed()
-                    }
-
-                    Some(fence) => fence.boxed(),
-                };
-
-                let future = previous_future
-                    .join(acquire_future)
-                    .then_execute(app.queue.clone(), command_buffer.clone())
-                    .unwrap()
-                    .then_swapchain_present(
-                        app.queue.clone(),
-                        SwapchainPresentInfo::swapchain_image_index(app.swapchain.clone(), image_i.try_into().unwrap())
-                    )
-                    .then_signal_fence_and_flush();
-
-                fences[image_i] = match future {
-                    Ok(value) => Some(Arc::new(value)),
-                    Err(FlushError::OutOfDate) => {
-                        recreate_swapchain = true;
-                        None
-                    }
-                    Err(e) => {
-                        println!("Failed to flush future: {:?}", e);
-                        None
-                    }
-                };
-
-                previous_fence_i = image_i;
-            },
-            // Resize
-            Event::WindowEvent { event: WindowEvent::Resized(_), .. } => {
-                window_resized = true;
-            },
-            // Destroy the app
-            Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => {
+        // Render a frame if app not being destroyed
+        if input.update(&event) && !destroying {
+            if input.quit() {
                 destroying = true;
                 *control_flow = ControlFlow::Exit;
                 { app.destroy(); }
-            },
-            _ => {}
+            }
+
+            if input.mouse_pressed(0) {
+                let window = app.surface.object().unwrap().downcast_ref::<Window>().unwrap();
+                // TODO: need to move cursor position manually to center
+                window.set_cursor_grab(CursorGrabMode::Confined);
+                window.set_cursor_visible(false);
+            }
+
+            if input.key_pressed(VirtualKeyCode::Escape) {
+                let window = app.surface.object().unwrap().downcast_ref::<Window>().unwrap();
+                window.set_cursor_grab(CursorGrabMode::None);
+                window.set_cursor_visible(true);
+            }
+
+            if input.window_resized().is_some() || recreate_swapchain {
+                recreate_swapchain = false;
+
+                let new_dimensions = input.window_resized().expect("Window resized was none");
+
+                // ignore rendering if one of the dimensions is 0
+                if new_dimensions.height == 0 || new_dimensions.width == 0 {
+                    return
+                }
+
+                let (new_swapchain, new_images) = match app.swapchain.recreate(SwapchainCreateInfo {
+                    image_extent: new_dimensions.into(),
+                    ..app.swapchain.create_info()
+                }) {
+                    Ok(r) => r,
+                    // Apparently the creation can fail if the user keeps resizing
+                    // In that case we can just try to recreate again on the next frame
+                    Err(SwapchainCreationError::ImageExtentNotSupported { .. }) => return,
+                    // Happens when minimized
+                    Err(SwapchainCreationError::ImageExtentZeroLengthDimensions { .. }) => return,
+                    Err(e) => panic!("Failed to recreate swapcahin: {:?}", e),
+                };
+                app.swapchain = new_swapchain;
+                let new_framebuffers = app.vulkan.create_framebuffers(
+                    &app.render_pass,
+                    &new_images
+                );
+
+                if input.window_resized().is_some() {
+
+                    let viewport = Viewport {
+                        origin: [0.0, 0.0],
+                        dimensions: new_dimensions.into(),
+                        depth_range: 0.0..1.0,
+                    };
+
+                    let new_pipeline = app.vulkan.create_pipeline(
+                        "default", 
+                        &app.render_pass, 
+                        &app.surface, 
+                        Some(&viewport)
+                    );
+                    app.images = new_images;
+                    app.pipeline = new_pipeline;
+                    app.framebuffers = new_framebuffers;
+
+                    // Recreate projection matrix
+                    let mut proj = nalgebra_glm::perspective(
+                        app.swapchain.image_extent()[0] as f32 / app.swapchain.image_extent()[1] as f32,
+                        nalgebra_glm::radians(&nalgebra_glm::vec1(45.0))[0],
+                        0.1,
+                        1000.0,
+                    );
+                    // convert from OpenGL to Vulkan coordinates
+                    proj[(1, 1)] *= -1.0;
+
+                    let mut projection_mat = ecs.world.write_resource::<ProjectionMatrix>();
+                    *projection_mat = ProjectionMatrix(proj);
+                }
+            }
+
+            let (image_i, suboptimal, acquire_future) =
+                match acquire_next_image(app.swapchain.clone(), None) {
+                    Ok(r) => (usize::try_from(r.0).unwrap(), r.1, r.2),
+                    Err(AcquireError::OutOfDate) => {
+                        recreate_swapchain = true;
+                        return;
+                    }
+                    Err(e) => panic!("Failed to acquire next image: {:?}", e),
+                };
+            
+            if suboptimal {
+                recreate_swapchain = true;
+            }
+
+            // Own scope for immutable reference
+            {
+                // Update render data
+                let mut framebuffer = ecs.world.write_resource::<RenderDataFrameBuffer>();
+                *framebuffer = RenderDataFrameBuffer(app.framebuffers[image_i].clone());
+                
+                let mut input_res = ecs.world.write_resource::<Arc<WinitInputHelper>>();
+                *input_res = Arc::new(input.clone());
+            }
+
+            dispatcher.dispatch(&ecs.world);
+            ecs.world.maintain();
+
+            let command_buffer = ecs.world.read_resource::<CommandBuffer>();
+            let command_buffer = match &command_buffer.command_buffer {
+                Some(v) => v,
+                None => return eprintln!("Command buffer received from ECS was none, skipping rendering for this frame")
+            };
+
+            if let Some(image_fence) = &fences[image_i] {
+                image_fence.wait(None).unwrap();
+            }
+
+            let previous_future = match fences[previous_fence_i].clone() {
+                None => {
+                    let mut now = sync::now(app.device.clone());
+                    now.cleanup_finished();
+
+                    now.boxed()
+                }
+
+                Some(fence) => fence.boxed(),
+            };
+
+            let future = previous_future
+                .join(acquire_future)
+                .then_execute(app.queue.clone(), command_buffer.clone())
+                .unwrap()
+                .then_swapchain_present(
+                    app.queue.clone(),
+                    SwapchainPresentInfo::swapchain_image_index(app.swapchain.clone(), image_i.try_into().unwrap())
+                )
+                .then_signal_fence_and_flush();
+
+            fences[image_i] = match future {
+                Ok(value) => Some(Arc::new(value)),
+                Err(FlushError::OutOfDate) => {
+                    recreate_swapchain = true;
+                    None
+                }
+                Err(e) => {
+                    println!("Failed to flush future: {:?}", e);
+                    None
+                }
+            };
+
+            previous_fence_i = image_i;
         }
     });
 }

@@ -22,11 +22,23 @@ pub struct Transform {
 
 impl Transform {
     pub fn transformation_matrix(&self) -> nalgebra_glm::Mat4 {
-        let translate = nalgebra_glm::translate(&nalgebra_glm::identity(), &self.pos);;
+        let translate = nalgebra_glm::translate(&nalgebra_glm::identity(), &self.pos);
         let rotation = nalgebra_glm::quat_to_mat4(&self.rot);
-        let scale = nalgebra_glm::scale(&nalgebra_glm::identity(), &self.scale);;
+        let scale = nalgebra_glm::scale(&nalgebra_glm::identity(), &self.scale);
         
         translate * rotation * scale
+    }
+
+    pub fn forward(&self) -> nalgebra_glm::Vec3 {
+        nalgebra_glm::quat_rotate_vec3(&self.rot.normalize(), &nalgebra_glm::vec3(0.0, 0.0, 1.0))
+    }
+
+    pub fn up(&self) -> nalgebra_glm::Vec3 {
+        nalgebra_glm::quat_rotate_vec3(&self.rot.normalize(), &nalgebra_glm::vec3(0.0, -1.0, 0.0))
+    }
+
+    pub fn right(&self) -> nalgebra_glm::Vec3 {
+        nalgebra_glm::quat_rotate_vec3(&self.rot.normalize(), &nalgebra_glm::vec3(1.0, 0.0, 0.0))
     }
 }
 
@@ -52,3 +64,13 @@ pub struct Renderable {
 #[derive(Component, Debug)]
 #[storage(HashMapStorage)]
 pub struct Camera;
+
+#[derive(Component, Debug)]
+#[storage(HashMapStorage)]
+pub struct Movement {
+    pub speed: f32,
+    pub sensitivity: f32,
+
+    pub yaw: f32,
+    pub pitch: f32
+}
