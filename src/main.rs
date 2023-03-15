@@ -17,9 +17,10 @@ mod shaders;
 
 use ecs::ECS;
 use ecs::components::general::{Transform, Camera, Movement};
-use ecs::resources::{ProjectionMatrix, ActiveCamera, RenderData, CommandBuffer, RenderDataFrameBuffer};
+use ecs::resources::{ProjectionMatrix, ActiveCamera, RenderData, CommandBuffer, RenderDataFrameBuffer, CursorGrab};
 use ecs::systems::general::PlayerInput;
 use ecs::systems::render::Render;
+use graphics::utils::get_window_from_surface;
 use graphics::vulkan::Vulkan;
 use shaders::vs::ty::VPUniformBufferObject;
 use specs::{World, WorldExt, Builder, DispatcherBuilder};
@@ -31,6 +32,7 @@ use vulkano::pipeline::graphics::viewport::{Viewport};
 use vulkano::swapchain::{Swapchain, SwapchainCreateInfo, Surface, SwapchainCreationError, acquire_next_image, AcquireError, SwapchainPresentInfo};
 use vulkano::sync::{self, GpuFuture, FenceSignalFuture};
 use vulkano::sync::FlushError;
+use winit::dpi::{LogicalPosition, PhysicalPosition};
 use winit_input_helper::WinitInputHelper;
 
 use std::sync::Arc;
@@ -119,6 +121,7 @@ fn main() {
 
     let mut destroying = false;
     let mut recreate_swapchain = false;
+    let mut cursor_grabbed = false;
 
     let mut proj = nalgebra_glm::perspective(
         app.swapchain.image_extent()[0] as f32 / app.swapchain.image_extent()[1] as f32,
@@ -128,17 +131,6 @@ fn main() {
     );
     // convert from OpenGL to Vulkan coordinates
     proj[(1, 1)] *= -1.0;
-
-    let pos = nalgebra_glm::vec3(2.0, 2.0, 2.0);
-    let rot = nalgebra_glm::quat_look_at(
-        &nalgebra_glm::vec3(-2.0, -2.0, -2.0),
-        &nalgebra_glm::vec3(0.0, -1.0, 0.0),
-    );
-    let camera_transform = Transform {
-        pos,
-        rot,
-        ..Default::default()
-    };
 
     // Create ECS classes
     let mut ecs = ECS::new();
@@ -164,13 +156,17 @@ fn main() {
     
     // Add initial input
     ecs.world.insert(Arc::new(input.clone()));
+    // Add initial surface
+    ecs.world.insert(app.surface.clone());
+    // Add initial cursor grab
+    ecs.world.insert(CursorGrab { 0: false });
     // Add projection matrix
     ecs.world.insert(ProjectionMatrix(proj));
     // Add a camera
     let camera_entity = ecs.world
         .create_entity()
         .with(Camera)
-        .with(camera_transform)
+        .with(Transform::default())
         .with(Movement {speed: 0.1, sensitivity: 0.01, yaw: 0.0, pitch: 0.0})
         .build();
     ecs.world.insert(ActiveCamera(camera_entity));
@@ -194,19 +190,6 @@ fn main() {
                 destroying = true;
                 *control_flow = ControlFlow::Exit;
                 { app.destroy(); }
-            }
-
-            if input.mouse_pressed(0) {
-                let window = app.surface.object().unwrap().downcast_ref::<Window>().unwrap();
-                // TODO: need to move cursor position manually to center
-                window.set_cursor_grab(CursorGrabMode::Confined);
-                window.set_cursor_visible(false);
-            }
-
-            if input.key_pressed(VirtualKeyCode::Escape) {
-                let window = app.surface.object().unwrap().downcast_ref::<Window>().unwrap();
-                window.set_cursor_grab(CursorGrabMode::None);
-                window.set_cursor_visible(true);
             }
 
             if input.window_resized().is_some() || recreate_swapchain {

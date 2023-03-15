@@ -26,3 +26,6 @@ pub struct CommandBuffer {
 pub struct ProjectionMatrix(pub Mat4x4);
 
 pub struct ActiveCamera(pub Entity);
+
+#[derive(Default)]
+pub struct CursorGrab(pub bool);
