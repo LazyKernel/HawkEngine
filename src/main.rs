@@ -176,7 +176,7 @@ fn main() {
         .create_entity()
         .with(Camera)
         .with(Transform::default())
-        .with(Movement {speed: 0.1, sensitivity: 0.01, yaw: 0.0, pitch: 0.0})
+        .with(Movement {speed: 0.1, sensitivity: 0.01, yaw: 0.0, pitch: 0.0, last_x: 0.0, last_y: 0.0})
         .build();
     ecs.world.insert(ActiveCamera(camera_entity));
     // Add initial render data

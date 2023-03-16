@@ -72,5 +72,8 @@ pub struct Movement {
     pub sensitivity: f32,
 
     pub yaw: f32,
-    pub pitch: f32
+    pub pitch: f32,
+
+    pub last_x: f32,
+    pub last_y: f32
 }
