@@ -141,6 +141,9 @@ fn main() {
         //    which have a chance of using its value
         // 2. the whole program hangs when trying to set cursor grab on windows
         //    if the operation happens from another thread
+        //    (this works on macos probably because macos is really particular about
+        //     threading for UI operations and the winit team has taken this into
+        //     account probably for macos only)
         .with_thread_local(PlayerInput)
         .with_thread_local(Render)
         .build();
