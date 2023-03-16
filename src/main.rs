@@ -22,6 +22,7 @@ use ecs::systems::general::PlayerInput;
 use ecs::systems::render::Render;
 use graphics::utils::get_window_from_surface;
 use graphics::vulkan::Vulkan;
+use nalgebra_glm::{Vec3, vec3};
 use shaders::vs::ty::VPUniformBufferObject;
 use specs::{World, WorldExt, Builder, DispatcherBuilder};
 use vulkano::buffer::CpuBufferPool;
@@ -150,17 +151,22 @@ fn main() {
         
 
     // TODO: move elsewhere
-    let renderable = app.vulkan.create_renderable("viking_room", Some("default".into()));
+    for i in 0..2 {
+        let renderable = app.vulkan.create_renderable("viking_room", Some("default".into()));
 
-    match renderable {
-        Ok(v) => {
-            ecs.world
-                .create_entity()
-                .with(v)
-                .with(Transform::default())
-                .build();
+        match renderable {
+            Ok(v) => {
+                ecs.world
+                    .create_entity()
+                    .with(v)
+                    .with(Transform {
+                        pos: vec3(0.0, 0.0, i as f32 * 1.0),
+                        ..Transform::default()
+                    })
+                    .build();
+            }
+            Err(e) => println!("Failed creating viking_room renderable: {:?}", e)
         }
-        Err(e) => println!("Failed creating viking_room renderable: {:?}", e)
     }
     
     // Add initial input
@@ -176,7 +182,7 @@ fn main() {
         .create_entity()
         .with(Camera)
         .with(Transform::default())
-        .with(Movement {speed: 0.1, sensitivity: 0.01, yaw: 0.0, pitch: 0.0, last_x: 0.0, last_y: 0.0})
+        .with(Movement {speed: 0.1, sensitivity: 0.1, yaw: 0.0, pitch: 0.0, last_x: 0.0, last_y: 0.0})
         .build();
     ecs.world.insert(ActiveCamera(camera_entity));
     // Add initial render data

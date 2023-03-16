@@ -108,21 +108,28 @@ impl<'a> System<'a> for PlayerInput {
                 m.last_x = x;
                 m.last_y = y;
 
-                m.yaw -= dx;
-                m.pitch -= dy;
+                m.yaw += dx * m.sensitivity;
+                m.pitch = clamp_scalar(m.pitch + dy * m.sensitivity, 0.0, 179.0);
+
+                if m.yaw > 360.0 {
+                    m.yaw -= 360.0;
+                }
+                else if m.yaw < 0.0 {
+                    m.yaw += 360.0;
+                }
 
                 let qx = nalgebra_glm::quat_rotate(
                     &nalgebra_glm::Quat::identity(), 
-                    m.yaw * m.sensitivity, 
-                    &nalgebra_glm::vec3(0.0, 0.0, -1.0)
+                    m.yaw.to_radians(), 
+                    &nalgebra_glm::vec3(0.0, 0.0, 1.0)
                 );
                 let right = nalgebra_glm::quat_rotate_vec3(
                     &qx.normalize(), 
-                    &nalgebra_glm::vec3(-1.0, 0.0, 0.0)
+                    &nalgebra_glm::vec3(1.0, 0.0, 0.0)
                 );
                 let qy = nalgebra_glm::quat_rotate(
                     &nalgebra_glm::Quat::identity(), 
-                    m.pitch * m.sensitivity, 
+                    m.pitch.to_radians(), 
                     &right
                 );
 
