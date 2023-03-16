@@ -135,7 +135,13 @@ fn main() {
     // Create ECS classes
     let mut ecs = ECS::new();
     let mut dispatcher = DispatcherBuilder::new()
-        .with(PlayerInput, "player_input", &[])
+        // Using thread_local for player input for a couple of reasons
+        // 1. it's probably a good idea to have the camera view be updated 
+        //    in a single thread while there are no other updates going on
+        //    which have a chance of using its value
+        // 2. the whole program hangs when trying to set cursor grab on windows
+        //    if the operation happens from another thread
+        .with_thread_local(PlayerInput)
         .with_thread_local(Render)
         .build();
         
