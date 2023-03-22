@@ -24,7 +24,7 @@ use graphics::utils::get_window_from_surface;
 use graphics::vulkan::Vulkan;
 use nalgebra_glm::{Vec3, vec3};
 use shaders::vs::ty::VPUniformBufferObject;
-use specs::{World, WorldExt, Builder, DispatcherBuilder};
+use specs::{World, WorldExt, Builder, DispatcherBuilder, Dispatcher};
 use vulkano::buffer::CpuBufferPool;
 use vulkano::descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet};
 use vulkano::device::physical::{PhysicalDevice};
@@ -56,7 +56,7 @@ const ENABLE_VALIDATION_LAYERS: bool = true;
 #[cfg(not(debug_assertions))]
 const ENABLE_VALIDATION_LAYERS: bool = false;
 
-struct App {
+pub struct App {
     instance: Arc<Instance>,
     physical: Arc<PhysicalDevice>,
     device: Arc<Device>,
@@ -75,7 +75,7 @@ struct App {
 }
 
 impl App {
-    fn create(event_loop: &EventLoop<()>) -> Self {
+    pub fn create(event_loop: &EventLoop<()>) -> Self {
         let device_extensions = DeviceExtensions {
             khr_swapchain: true,
             ..DeviceExtensions::empty()
@@ -95,19 +95,41 @@ impl App {
         let ubo_pool = vulkan.create_view_ubo_pool();
         return Self { instance, device, physical, queue, render_pass, framebuffers, pipeline, surface, swapchain, images, ubo_pool, vulkan, start: Instant::now() };
     }
-
-    fn run(&mut self) -> () {
-        
-    }
-    
-    fn render(&mut self) {
-
-    }
-
-    fn destroy(&mut self) {}
 }
 
-fn main() {
+pub struct HawkEngine<'a> {
+    pub ecs: ECS<'a>,
+    dispatchers: Vec<Dispatcher<'a,'a>>,
+}
+
+impl<'a> HawkEngine<'a> {
+    pub fn new() -> Self {
+        // Create ECS classes
+        let ecs = ECS::new();
+        let dispatcher = DispatcherBuilder::new()
+            // Using thread_local for player input for a couple of reasons
+            // 1. it's probably a good idea to have the camera view be updated 
+            //    in a single thread while there are no other updates going on
+            //    which have a chance of using its value
+            // 2. the whole program hangs when trying to set cursor grab on windows
+            //    if the operation happens from another thread
+            //    (this works on macos probably because macos is really particular about
+            //     threading for UI operations and the winit team has taken this into
+            //     account probably for macos only)
+            .with_thread_local(PlayerInput)
+            .with_thread_local(Render)
+            .build();
+        let dispatchers = vec![dispatcher];
+
+        return Self { ecs, dispatchers }
+    }
+
+    pub fn add_dispatcher(&mut self, dispatcher: Dispatcher<'a, 'a>) {
+        self.dispatchers.push(dispatcher);
+    }
+}
+
+pub fn start_engine(mut engine: HawkEngine<'static>) {
     pretty_env_logger::init();
 
     let mut input = WinitInputHelper::new();
@@ -122,7 +144,6 @@ fn main() {
 
     let mut destroying = false;
     let mut recreate_swapchain = false;
-    let mut cursor_grabbed = false;
 
     let mut proj = nalgebra_glm::perspective(
         app.swapchain.image_extent()[0] as f32 / app.swapchain.image_extent()[1] as f32,
@@ -133,30 +154,13 @@ fn main() {
     // convert from OpenGL to Vulkan coordinates
     proj[(1, 1)] *= -1.0;
 
-    // Create ECS classes
-    let mut ecs = ECS::new();
-    let mut dispatcher = DispatcherBuilder::new()
-        // Using thread_local for player input for a couple of reasons
-        // 1. it's probably a good idea to have the camera view be updated 
-        //    in a single thread while there are no other updates going on
-        //    which have a chance of using its value
-        // 2. the whole program hangs when trying to set cursor grab on windows
-        //    if the operation happens from another thread
-        //    (this works on macos probably because macos is really particular about
-        //     threading for UI operations and the winit team has taken this into
-        //     account probably for macos only)
-        .with_thread_local(PlayerInput)
-        .with_thread_local(Render)
-        .build();
-        
-
     // TODO: move elsewhere
     for i in 0..2 {
         let renderable = app.vulkan.create_renderable("viking_room", Some("default".into()));
 
         match renderable {
             Ok(v) => {
-                ecs.world
+                engine.ecs.world
                     .create_entity()
                     .with(v)
                     .with(Transform {
@@ -170,32 +174,32 @@ fn main() {
     }
     
     // Add initial input
-    ecs.world.insert(Arc::new(input.clone()));
+    engine.ecs.world.insert(Arc::new(input.clone()));
     // Add initial surface
-    ecs.world.insert(app.surface.clone());
+    engine.ecs.world.insert(app.surface.clone());
     // Add initial cursor grab
-    ecs.world.insert(CursorGrab { 0: false });
+    engine.ecs.world.insert(CursorGrab { 0: false });
     // Add projection matrix
-    ecs.world.insert(ProjectionMatrix(proj));
+    engine.ecs.world.insert(ProjectionMatrix(proj));
     // Add a camera
-    let camera_entity = ecs.world
+    let camera_entity = engine.ecs.world
         .create_entity()
         .with(Camera)
         .with(Transform::default())
         .with(Movement {speed: 0.1, sensitivity: 0.1, yaw: 0.0, pitch: 0.0, last_x: 0.0, last_y: 0.0})
         .build();
-    ecs.world.insert(ActiveCamera(camera_entity));
+    engine.ecs.world.insert(ActiveCamera(camera_entity));
     // Add initial render data
-    ecs.world.insert(RenderData {
+    engine.ecs.world.insert(RenderData {
         pipeline: app.pipeline.clone(),
         ubo_pool: app.ubo_pool.clone(),
         command_buffer_allocator: app.vulkan.command_buffer_allocator.clone(),
         descriptor_set_allocator: app.vulkan.descriptor_set_allocator.clone(),
         queue_family_index: app.vulkan.queue.queue_family_index()
     });
-    ecs.world.insert(RenderDataFrameBuffer(app.framebuffers[0].clone()));
+    engine.ecs.world.insert(RenderDataFrameBuffer(app.framebuffers[0].clone()));
     // Add empty command buffer
-    ecs.world.insert(CommandBuffer { command_buffer: None });
+    engine.ecs.world.insert(CommandBuffer { command_buffer: None });
 
     // look into this when rendering https://www.reddit.com/r/vulkan/comments/e7n5b6/drawing_multiple_objects/
     event_loop.run(move |event, _, control_flow| {
@@ -204,7 +208,6 @@ fn main() {
             if input.quit() {
                 destroying = true;
                 *control_flow = ControlFlow::Exit;
-                { app.destroy(); }
             }
 
             if input.window_resized().is_some() || recreate_swapchain {
@@ -263,7 +266,7 @@ fn main() {
                     // convert from OpenGL to Vulkan coordinates
                     proj[(1, 1)] *= -1.0;
 
-                    let mut projection_mat = ecs.world.write_resource::<ProjectionMatrix>();
+                    let mut projection_mat = engine.ecs.world.write_resource::<ProjectionMatrix>();
                     *projection_mat = ProjectionMatrix(proj);
                 }
             }
@@ -285,17 +288,20 @@ fn main() {
             // Own scope for immutable reference
             {
                 // Update render data
-                let mut framebuffer = ecs.world.write_resource::<RenderDataFrameBuffer>();
+                let mut framebuffer = engine.ecs.world.write_resource::<RenderDataFrameBuffer>();
                 *framebuffer = RenderDataFrameBuffer(app.framebuffers[image_i].clone());
                 
-                let mut input_res = ecs.world.write_resource::<Arc<WinitInputHelper>>();
+                let mut input_res = engine.ecs.world.write_resource::<Arc<WinitInputHelper>>();
                 *input_res = Arc::new(input.clone());
             }
 
-            dispatcher.dispatch(&ecs.world);
-            ecs.world.maintain();
+            // Iterate through all dispatchers, with the internal being last
+            for dispatcher in engine.dispatchers.iter_mut().rev() {
+                dispatcher.dispatch(&engine.ecs.world);
+            }
+            engine.ecs.world.maintain();
 
-            let command_buffer = ecs.world.read_resource::<CommandBuffer>();
+            let command_buffer = engine.ecs.world.read_resource::<CommandBuffer>();
             let command_buffer = match &command_buffer.command_buffer {
                 Some(v) => v,
                 None => return eprintln!("Command buffer received from ECS was none, skipping rendering for this frame")
@@ -341,4 +347,9 @@ fn main() {
             previous_fence_i = image_i;
         }
     });
+}
+
+fn main() {
+    let engine = HawkEngine::new();
+    start_engine(engine);
 }
