@@ -11,7 +11,7 @@
 )]
 
 mod data_structures;
-mod ecs;
+pub mod ecs;
 mod graphics;
 mod shaders;
 
@@ -56,7 +56,7 @@ const ENABLE_VALIDATION_LAYERS: bool = true;
 #[cfg(not(debug_assertions))]
 const ENABLE_VALIDATION_LAYERS: bool = false;
 
-pub struct App {
+pub struct HawkEngine<'a> {
     instance: Arc<Instance>,
     physical: Arc<PhysicalDevice>,
     device: Arc<Device>,
@@ -69,37 +69,11 @@ pub struct App {
     images: Vec<Arc<SwapchainImage>>,
     ubo_pool: Arc<CpuBufferPool<VPUniformBufferObject>>,
 
-    vulkan: Vulkan,
+    pub vulkan: Vulkan,
 
-    start: Instant
-}
-
-impl App {
-    pub fn create(event_loop: &EventLoop<()>) -> Self {
-        let device_extensions = DeviceExtensions {
-            khr_swapchain: true,
-            ..DeviceExtensions::empty()
-        };
-
-        let instance = Vulkan::create_instance(ENABLE_VALIDATION_LAYERS);
-        let surface = Vulkan::create_surface(&instance, event_loop);
-        let (physical, queue_index) = Vulkan::select_physical_device(&instance, &surface, &device_extensions);
-        let (device, queue) = Vulkan::create_device(&physical, queue_index, &device_extensions);
-
-        let mut vulkan = Vulkan::new(&device, &queue);
-
-        let (swapchain, images) = vulkan.create_swapchain(&physical, &surface);
-        let render_pass = vulkan.create_render_pass(&swapchain);
-        let framebuffers= vulkan.create_framebuffers(&render_pass, &images);
-        let pipeline = vulkan.create_pipeline("default", &render_pass, &surface, None);
-        let ubo_pool = vulkan.create_view_ubo_pool();
-        return Self { instance, device, physical, queue, render_pass, framebuffers, pipeline, surface, swapchain, images, ubo_pool, vulkan, start: Instant::now() };
-    }
-}
-
-pub struct HawkEngine<'a> {
     pub ecs: ECS<'a>,
     dispatchers: Vec<Dispatcher<'a,'a>>,
+    event_loop: EventLoop<()>
 }
 
 impl<'a> HawkEngine<'a> {
@@ -121,7 +95,25 @@ impl<'a> HawkEngine<'a> {
             .build();
         let dispatchers = vec![dispatcher];
 
-        return Self { ecs, dispatchers }
+        let device_extensions = DeviceExtensions {
+            khr_swapchain: true,
+            ..DeviceExtensions::empty()
+        };
+
+        let event_loop = EventLoop::new();
+        let instance = Vulkan::create_instance(ENABLE_VALIDATION_LAYERS);
+        let surface = Vulkan::create_surface(&instance, &event_loop);
+        let (physical, queue_index) = Vulkan::select_physical_device(&instance, &surface, &device_extensions);
+        let (device, queue) = Vulkan::create_device(&physical, queue_index, &device_extensions);
+
+        let mut vulkan = Vulkan::new(&device, &queue);
+
+        let (swapchain, images) = vulkan.create_swapchain(&physical, &surface);
+        let render_pass = vulkan.create_render_pass(&swapchain);
+        let framebuffers= vulkan.create_framebuffers(&render_pass, &images);
+        let pipeline = vulkan.create_pipeline("default", &render_pass, &surface, None);
+        let ubo_pool = vulkan.create_view_ubo_pool();
+        return Self { instance, device, physical, queue, render_pass, framebuffers, pipeline, surface, swapchain, images, ubo_pool, vulkan, ecs, dispatchers, event_loop };
     }
 
     pub fn add_dispatcher(&mut self, dispatcher: Dispatcher<'a, 'a>) {
@@ -129,16 +121,13 @@ impl<'a> HawkEngine<'a> {
     }
 }
 
+
 pub fn start_engine(mut engine: HawkEngine<'static>) {
     pretty_env_logger::init();
 
     let mut input = WinitInputHelper::new();
 
-    // App
-    let event_loop = EventLoop::new();
-    let mut app = App::create(&event_loop);
-
-    let frames_in_flight = app.images.len();
+    let frames_in_flight = engine.images.len();
     let mut fences: Vec<Option<Arc<FenceSignalFuture<_>>>> = vec![None; frames_in_flight];
     let mut previous_fence_i = 0;
 
@@ -146,63 +135,36 @@ pub fn start_engine(mut engine: HawkEngine<'static>) {
     let mut recreate_swapchain = false;
 
     let mut proj = nalgebra_glm::perspective(
-        app.swapchain.image_extent()[0] as f32 / app.swapchain.image_extent()[1] as f32,
+        engine.swapchain.image_extent()[0] as f32 / engine.swapchain.image_extent()[1] as f32,
         nalgebra_glm::radians(&nalgebra_glm::vec1(45.0))[0],
         0.1,
         1000.0,
     );
     // convert from OpenGL to Vulkan coordinates
     proj[(1, 1)] *= -1.0;
-
-    // TODO: move elsewhere
-    for i in 0..2 {
-        let renderable = app.vulkan.create_renderable("viking_room", Some("default".into()));
-
-        match renderable {
-            Ok(v) => {
-                engine.ecs.world
-                    .create_entity()
-                    .with(v)
-                    .with(Transform {
-                        pos: vec3(0.0, 0.0, i as f32 * 1.0),
-                        ..Transform::default()
-                    })
-                    .build();
-            }
-            Err(e) => println!("Failed creating viking_room renderable: {:?}", e)
-        }
-    }
     
     // Add initial input
     engine.ecs.world.insert(Arc::new(input.clone()));
     // Add initial surface
-    engine.ecs.world.insert(app.surface.clone());
+    engine.ecs.world.insert(engine.surface.clone());
     // Add initial cursor grab
     engine.ecs.world.insert(CursorGrab { 0: false });
     // Add projection matrix
     engine.ecs.world.insert(ProjectionMatrix(proj));
-    // Add a camera
-    let camera_entity = engine.ecs.world
-        .create_entity()
-        .with(Camera)
-        .with(Transform::default())
-        .with(Movement {speed: 0.1, sensitivity: 0.1, yaw: 0.0, pitch: 0.0, last_x: 0.0, last_y: 0.0})
-        .build();
-    engine.ecs.world.insert(ActiveCamera(camera_entity));
     // Add initial render data
     engine.ecs.world.insert(RenderData {
-        pipeline: app.pipeline.clone(),
-        ubo_pool: app.ubo_pool.clone(),
-        command_buffer_allocator: app.vulkan.command_buffer_allocator.clone(),
-        descriptor_set_allocator: app.vulkan.descriptor_set_allocator.clone(),
-        queue_family_index: app.vulkan.queue.queue_family_index()
+        pipeline: engine.pipeline.clone(),
+        ubo_pool: engine.ubo_pool.clone(),
+        command_buffer_allocator: engine.vulkan.command_buffer_allocator.clone(),
+        descriptor_set_allocator: engine.vulkan.descriptor_set_allocator.clone(),
+        queue_family_index: engine.vulkan.queue.queue_family_index()
     });
-    engine.ecs.world.insert(RenderDataFrameBuffer(app.framebuffers[0].clone()));
+    engine.ecs.world.insert(RenderDataFrameBuffer(engine.framebuffers[0].clone()));
     // Add empty command buffer
     engine.ecs.world.insert(CommandBuffer { command_buffer: None });
 
     // look into this when rendering https://www.reddit.com/r/vulkan/comments/e7n5b6/drawing_multiple_objects/
-    event_loop.run(move |event, _, control_flow| {
+    engine.event_loop.run(move |event, _, control_flow| {
         // Render a frame if app not being destroyed
         if input.update(&event) && !destroying {
             if input.quit() {
@@ -220,9 +182,9 @@ pub fn start_engine(mut engine: HawkEngine<'static>) {
                     return
                 }
 
-                let (new_swapchain, new_images) = match app.swapchain.recreate(SwapchainCreateInfo {
+                let (new_swapchain, new_images) = match engine.swapchain.recreate(SwapchainCreateInfo {
                     image_extent: new_dimensions.into(),
-                    ..app.swapchain.create_info()
+                    ..engine.swapchain.create_info()
                 }) {
                     Ok(r) => r,
                     // Apparently the creation can fail if the user keeps resizing
@@ -232,9 +194,9 @@ pub fn start_engine(mut engine: HawkEngine<'static>) {
                     Err(SwapchainCreationError::ImageExtentZeroLengthDimensions { .. }) => return,
                     Err(e) => panic!("Failed to recreate swapcahin: {:?}", e),
                 };
-                app.swapchain = new_swapchain;
-                let new_framebuffers = app.vulkan.create_framebuffers(
-                    &app.render_pass,
+                engine.swapchain = new_swapchain;
+                let new_framebuffers = engine.vulkan.create_framebuffers(
+                    &engine.render_pass,
                     &new_images
                 );
 
@@ -246,19 +208,19 @@ pub fn start_engine(mut engine: HawkEngine<'static>) {
                         depth_range: 0.0..1.0,
                     };
 
-                    let new_pipeline = app.vulkan.create_pipeline(
+                    let new_pipeline = engine.vulkan.create_pipeline(
                         "default", 
-                        &app.render_pass, 
-                        &app.surface, 
+                        &engine.render_pass, 
+                        &engine.surface, 
                         Some(&viewport)
                     );
-                    app.images = new_images;
-                    app.pipeline = new_pipeline;
-                    app.framebuffers = new_framebuffers;
+                    engine.images = new_images;
+                    engine.pipeline = new_pipeline;
+                    engine.framebuffers = new_framebuffers;
 
                     // Recreate projection matrix
                     let mut proj = nalgebra_glm::perspective(
-                        app.swapchain.image_extent()[0] as f32 / app.swapchain.image_extent()[1] as f32,
+                        engine.swapchain.image_extent()[0] as f32 / engine.swapchain.image_extent()[1] as f32,
                         nalgebra_glm::radians(&nalgebra_glm::vec1(45.0))[0],
                         0.1,
                         1000.0,
@@ -272,7 +234,7 @@ pub fn start_engine(mut engine: HawkEngine<'static>) {
             }
 
             let (image_i, suboptimal, acquire_future) =
-                match acquire_next_image(app.swapchain.clone(), None) {
+                match acquire_next_image(engine.swapchain.clone(), None) {
                     Ok(r) => (usize::try_from(r.0).unwrap(), r.1, r.2),
                     Err(AcquireError::OutOfDate) => {
                         recreate_swapchain = true;
@@ -289,7 +251,7 @@ pub fn start_engine(mut engine: HawkEngine<'static>) {
             {
                 // Update render data
                 let mut framebuffer = engine.ecs.world.write_resource::<RenderDataFrameBuffer>();
-                *framebuffer = RenderDataFrameBuffer(app.framebuffers[image_i].clone());
+                *framebuffer = RenderDataFrameBuffer(engine.framebuffers[image_i].clone());
                 
                 let mut input_res = engine.ecs.world.write_resource::<Arc<WinitInputHelper>>();
                 *input_res = Arc::new(input.clone());
@@ -313,7 +275,7 @@ pub fn start_engine(mut engine: HawkEngine<'static>) {
 
             let previous_future = match fences[previous_fence_i].clone() {
                 None => {
-                    let mut now = sync::now(app.device.clone());
+                    let mut now = sync::now(engine.device.clone());
                     now.cleanup_finished();
 
                     now.boxed()
@@ -324,11 +286,11 @@ pub fn start_engine(mut engine: HawkEngine<'static>) {
 
             let future = previous_future
                 .join(acquire_future)
-                .then_execute(app.queue.clone(), command_buffer.clone())
+                .then_execute(engine.queue.clone(), command_buffer.clone())
                 .unwrap()
                 .then_swapchain_present(
-                    app.queue.clone(),
-                    SwapchainPresentInfo::swapchain_image_index(app.swapchain.clone(), image_i.try_into().unwrap())
+                    engine.queue.clone(),
+                    SwapchainPresentInfo::swapchain_image_index(engine.swapchain.clone(), image_i.try_into().unwrap())
                 )
                 .then_signal_fence_and_flush();
 
