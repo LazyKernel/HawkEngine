@@ -348,8 +348,3 @@ pub fn start_engine(mut engine: HawkEngine<'static>) {
         }
     });
 }
-
-fn main() {
-    let engine = HawkEngine::new();
-    start_engine(engine);
-}
