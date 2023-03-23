@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use log::{error, debug};
 use nalgebra_glm::clamp_scalar;
 use specs::{System, Read, ReadStorage, WriteStorage, Write};
 use vulkano::swapchain::Surface;
@@ -27,7 +28,7 @@ impl<'a> System<'a> for PlayerInput {
         let input = match input {
             Some(v) => v,
             None => {
-                eprintln!("Input helper was none");
+                error!("Input helper was none");
                 return
             }
         };
@@ -35,14 +36,14 @@ impl<'a> System<'a> for PlayerInput {
         let surface = match surface {
             Some(v) => v,
             None => {
-                eprintln!("Input helper was none");
+                error!("Input helper was none");
                 return
             }
         };
 
         let window = match get_window_from_surface(&surface) {
             Some(v) => v,
-            None => return eprintln!("Could not get window in PlayerInput")
+            None => return error!("Could not get window in PlayerInput")
         };
 
         let last_x: Option<f32>;
@@ -53,7 +54,7 @@ impl<'a> System<'a> for PlayerInput {
 
             match result {
                 Ok(_) => (),
-                Err(e) => println!("Failed to grab cursor, probably not a problem: {:?}", e)
+                Err(e) => debug!("Failed to grab cursor, probably not a problem: {:?}", e)
             }
 
             window.set_cursor_visible(false);
@@ -65,7 +66,7 @@ impl<'a> System<'a> for PlayerInput {
 
             match result {
                 Ok(_) => (),
-                Err(e) => println!("Failed to ungrab cursor, this is weird: {:?}", e)
+                Err(e) => debug!("Failed to ungrab cursor, this is weird: {:?}", e)
             }
 
             window.set_cursor_visible(true);
@@ -81,7 +82,7 @@ impl<'a> System<'a> for PlayerInput {
             let result = window.set_cursor_position(PhysicalPosition { x: size.width / 2, y: size.height / 2 });
             match result {
                 Ok(_) => (),
-                Err(e) => println!("Failed to set cursor position, not available on some platforms: {:?}", e)
+                Err(e) => debug!("Failed to set cursor position, not available on some platforms: {:?}", e)
             };
         }
         else {

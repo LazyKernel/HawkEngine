@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use log::error;
 use specs::{System, ReadStorage, Read, Write, Entities};
 use vulkano::{command_buffer::{RenderPassBeginInfo, SubpassContents, AutoCommandBufferBuilder, CommandBufferUsage}, descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet}, pipeline::{Pipeline, PipelineBindPoint}, buffer::TypedBufferAccess};
 
@@ -27,7 +28,7 @@ impl<'a> System<'a> for Render {
         let active_camera = match active_cam {
             Some(v) => v,
             None => {
-                eprintln!("Active camera was none");
+                error!("Active camera was none");
                 return
             }
         };
@@ -35,7 +36,7 @@ impl<'a> System<'a> for Render {
         let render_data = match render_data {
             Some(v) => v,
             None => {
-                eprintln!("Command buffer was none");
+                error!("Command buffer was none");
                 return
             }
         };
@@ -43,7 +44,7 @@ impl<'a> System<'a> for Render {
         let framebuffer = match framebuffer {
             Some(v) => v,
             None => {
-                eprintln!("Framebuffer was none");
+                error!("Framebuffer was none");
                 return
             }
         };
@@ -109,18 +110,18 @@ impl<'a> System<'a> for Render {
                 .draw_indexed(r.index_buffer.len() as u32, 1, 0, 0, 0);
 
             if result.is_err() {
-                eprintln!("Building a command buffer failed for entity {:?}", e);
+                error!("Building a command buffer failed for entity {:?}", e);
             }
         }
 
         match builder.end_render_pass() {
             Ok(v) => v,
-            Err(e) => return eprintln!("Failed ending render pass: {:?}", e)
+            Err(e) => return error!("Failed ending render pass: {:?}", e)
         };
 
         let buffer = match builder.build() {
             Ok(v) => Arc::new(v),
-            Err(e) => return eprintln!("Failed building command buffer: {:?}", e)
+            Err(e) => return error!("Failed building command buffer: {:?}", e)
         };
 
         command_buffer.command_buffer = Some(buffer);

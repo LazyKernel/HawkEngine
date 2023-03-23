@@ -20,6 +20,7 @@ use ecs::resources::{ProjectionMatrix, RenderData, CommandBuffer, RenderDataFram
 use ecs::systems::general::PlayerInput;
 use ecs::systems::render::Render;
 use graphics::vulkan::Vulkan;
+use log::{info, trace};
 use shaders::vs::ty::VPUniformBufferObject;
 use specs::{WorldExt, DispatcherBuilder, Dispatcher};
 use vulkano::buffer::CpuBufferPool;
@@ -64,6 +65,11 @@ pub struct HawkEngine<'a> {
 
 impl<'a> HawkEngine<'a> {
     pub fn new() -> Self {
+        match pretty_env_logger::try_init() {
+            Ok(_) => {},
+            Err(e) => trace!("Failed to init pretty_env_logger, probably already initialized: {:?}", e)
+        }
+
         // Create ECS classes
         let ecs = ECS::new();
         let dispatcher = DispatcherBuilder::new()
@@ -109,8 +115,6 @@ impl<'a> HawkEngine<'a> {
 
 
 pub fn start_engine(mut engine: HawkEngine<'static>) {
-    pretty_env_logger::init();
-
     let mut input = WinitInputHelper::new();
 
     let frames_in_flight = engine.images.len();
@@ -287,7 +291,7 @@ pub fn start_engine(mut engine: HawkEngine<'static>) {
                     None
                 }
                 Err(e) => {
-                    println!("Failed to flush future: {:?}", e);
+                    info!("Failed to flush future: {:?}", e);
                     None
                 }
             };
