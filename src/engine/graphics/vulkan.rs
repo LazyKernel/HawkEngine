@@ -4,11 +4,11 @@ use crate::shaders;
 use crate::shaders::vs::ty::VPUniformBufferObject;
 use vulkano::buffer::cpu_pool::CpuBufferPoolSubbuffer;
 use vulkano::command_buffer::allocator::{StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo};
-use vulkano::descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet, DescriptorSet};
+use vulkano::descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet};
 use vulkano::descriptor_set::allocator::StandardDescriptorSetAllocator;
 use vulkano::device::physical::{PhysicalDevice, PhysicalDeviceType};
 use vulkano::format::Format;
-use vulkano::memory::allocator::{StandardMemoryAllocator, MemoryUsage, FastMemoryAllocator};
+use vulkano::memory::allocator::{StandardMemoryAllocator, MemoryUsage};
 use vulkano::pipeline::graphics::color_blend::ColorBlendState;
 use vulkano::pipeline::graphics::depth_stencil::DepthStencilState;
 use vulkano::pipeline::{GraphicsPipeline, Pipeline, PipelineBindPoint};
@@ -41,7 +41,7 @@ use vulkano::device::{
     Queue, DeviceExtensions
 };
 use vulkano::buffer::{CpuAccessibleBuffer, BufferUsage, TypedBufferAccess, CpuBufferPool};
-use vulkano::command_buffer::{AutoCommandBufferBuilder, CommandBufferUsage, RenderPassBeginInfo, SubpassContents, PrimaryAutoCommandBuffer, CommandBufferLevel, PrimaryCommandBufferAbstract};
+use vulkano::command_buffer::{AutoCommandBufferBuilder, CommandBufferUsage, RenderPassBeginInfo, SubpassContents, PrimaryAutoCommandBuffer, PrimaryCommandBufferAbstract};
 use vulkano::image::{ImageUsage, SwapchainImage, ImmutableImage, ImageDimensions, MipmapsCount, ImageAccess, AttachmentImage};
 use vulkano::image::view::ImageView;
 use vulkano::render_pass::{RenderPass, Framebuffer, FramebufferCreateInfo, Subpass};
@@ -54,7 +54,6 @@ pub struct Vulkan {
     pipelines: HashMap<String, Arc<GraphicsPipeline>>,
     buffer_memory_allocator: Arc<StandardMemoryAllocator>,
     pub command_buffer_allocator: Arc<StandardCommandBufferAllocator>,
-    fast_buffer_memory_allocator: Arc<FastMemoryAllocator>,
     // TODO: temporarily public
     pub descriptor_set_allocator: Arc<StandardDescriptorSetAllocator>
 }
@@ -77,7 +76,6 @@ impl Vulkan {
     pub fn new(device: &Arc<Device>, queue: &Arc<Queue>) -> Self {
         let buffer_memory_allocator = Arc::new(StandardMemoryAllocator::new_default(device.clone()));
         let command_buffer_allocator = Arc::new(StandardCommandBufferAllocator::new(device.clone(), StandardCommandBufferAllocatorCreateInfo::default()));
-        let fast_buffer_memory_allocator = Arc::new(FastMemoryAllocator::new_default(device.clone()));
         let descriptor_set_allocator = Arc::new(StandardDescriptorSetAllocator::new(device.clone()));
 
         let sampler = Sampler::new(
@@ -97,7 +95,6 @@ impl Vulkan {
             pipelines: HashMap::new(),
             buffer_memory_allocator, 
             command_buffer_allocator, 
-            fast_buffer_memory_allocator,
             descriptor_set_allocator
         }
     }
@@ -388,7 +385,6 @@ impl Vulkan {
         let mut pixels = vec![0; reader.info().raw_bytes()];
         reader.next_frame(&mut pixels).unwrap();
 
-        let size = reader.info().raw_bytes() as u64;
         let (width, height) = reader.info().size();
 
         let dimensions = ImageDimensions::Dim2d { 
@@ -414,7 +410,7 @@ impl Vulkan {
         ).unwrap();
 
         // Need to use the created command buffer to upload the texture to the gpu
-        let mut image_upload = uploads
+        let image_upload = uploads
             .build()
             .unwrap()
             .execute(self.queue.clone())

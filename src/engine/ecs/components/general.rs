@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use nalgebra_glm::{Vec3, Quat};
-use specs::{Component, VecStorage, storage, HashMapStorage};
-use vulkano::{image::{view::ImageView, ImmutableImage}, buffer::CpuAccessibleBuffer, descriptor_set::PersistentDescriptorSet, sync::GpuFuture};
+use specs::{Component, VecStorage, HashMapStorage};
+use vulkano::{buffer::CpuAccessibleBuffer, descriptor_set::PersistentDescriptorSet};
 
 use crate::data_structures::graphics::Vertex;
 

@@ -16,34 +16,22 @@ mod graphics;
 mod shaders;
 
 use ecs::ECS;
-use ecs::components::general::{Transform, Camera, Movement};
-use ecs::resources::{ProjectionMatrix, ActiveCamera, RenderData, CommandBuffer, RenderDataFrameBuffer, CursorGrab};
+use ecs::resources::{ProjectionMatrix, RenderData, CommandBuffer, RenderDataFrameBuffer, CursorGrab};
 use ecs::systems::general::PlayerInput;
 use ecs::systems::render::Render;
-use graphics::utils::get_window_from_surface;
 use graphics::vulkan::Vulkan;
-use nalgebra_glm::{Vec3, vec3};
 use shaders::vs::ty::VPUniformBufferObject;
-use specs::{World, WorldExt, Builder, DispatcherBuilder, Dispatcher};
+use specs::{WorldExt, DispatcherBuilder, Dispatcher};
 use vulkano::buffer::CpuBufferPool;
-use vulkano::descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet};
-use vulkano::device::physical::{PhysicalDevice};
-use vulkano::pipeline::{GraphicsPipeline, Pipeline};
+use vulkano::pipeline::{GraphicsPipeline};
 use vulkano::pipeline::graphics::viewport::{Viewport};
 use vulkano::swapchain::{Swapchain, SwapchainCreateInfo, Surface, SwapchainCreationError, acquire_next_image, AcquireError, SwapchainPresentInfo};
 use vulkano::sync::{self, GpuFuture, FenceSignalFuture};
 use vulkano::sync::FlushError;
-use winit::dpi::{LogicalPosition, PhysicalPosition};
 use winit_input_helper::WinitInputHelper;
 
 use std::sync::Arc;
-use std::time::Instant;
-use winit::event::{Event, WindowEvent, VirtualKeyCode};
 use winit::event_loop::{ControlFlow, EventLoop};
-use winit::window::{Window, CursorGrabMode};
-use vulkano::instance::{
-    Instance
-};
 use vulkano::device::{
     Device, 
     Queue, DeviceExtensions,
@@ -57,8 +45,6 @@ const ENABLE_VALIDATION_LAYERS: bool = true;
 const ENABLE_VALIDATION_LAYERS: bool = false;
 
 pub struct HawkEngine<'a> {
-    instance: Arc<Instance>,
-    physical: Arc<PhysicalDevice>,
     device: Arc<Device>,
     queue: Arc<Queue>,
     render_pass: Arc<RenderPass>,
@@ -113,7 +99,7 @@ impl<'a> HawkEngine<'a> {
         let framebuffers= vulkan.create_framebuffers(&render_pass, &images);
         let pipeline = vulkan.create_pipeline("default", &render_pass, &surface, None);
         let ubo_pool = vulkan.create_view_ubo_pool();
-        return Self { instance, device, physical, queue, render_pass, framebuffers, pipeline, surface, swapchain, images, ubo_pool, vulkan, ecs, dispatchers, event_loop };
+        return Self { device, queue, render_pass, framebuffers, pipeline, surface, swapchain, images, ubo_pool, vulkan, ecs, dispatchers, event_loop };
     }
 
     pub fn add_dispatcher(&mut self, dispatcher: Dispatcher<'a, 'a>) {

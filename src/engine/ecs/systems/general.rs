@@ -3,7 +3,7 @@ use std::sync::Arc;
 use nalgebra_glm::clamp_scalar;
 use specs::{System, Read, ReadStorage, WriteStorage, Write};
 use vulkano::swapchain::Surface;
-use winit::{event::VirtualKeyCode, window::{Window, CursorGrabMode}, dpi::PhysicalPosition};
+use winit::{event::VirtualKeyCode, window::{CursorGrabMode}, dpi::PhysicalPosition};
 use winit_input_helper::WinitInputHelper;
 
 use crate::{ecs::{components::general::{Camera, Transform, Movement}, resources::CursorGrab}, graphics::utils::get_window_from_surface};
@@ -45,8 +45,8 @@ impl<'a> System<'a> for PlayerInput {
             None => return eprintln!("Could not get window in PlayerInput")
         };
 
-        let mut last_x: Option<f32> = None;
-        let mut last_y: Option<f32> = None;
+        let last_x: Option<f32>;
+        let last_y: Option<f32>;
         if input.mouse_pressed(0) {
             let result = window.set_cursor_grab(CursorGrabMode::Confined)
                 .or_else(|_e| window.set_cursor_grab(CursorGrabMode::Locked));
