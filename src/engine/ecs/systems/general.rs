@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use log::{error, debug};
-use nalgebra::{clamp, UnitQuaternion, Vector3, Isometry3, Unit, Quaternion};
+use nalgebra::{clamp, UnitQuaternion, Vector3};
 use specs::{System, Read, ReadStorage, WriteStorage, Write};
 use vulkano::swapchain::Surface;
 use winit::{event::VirtualKeyCode, window::{CursorGrabMode}, dpi::PhysicalPosition};
