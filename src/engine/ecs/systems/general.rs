@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use log::{error, debug};
-use nalgebra_glm::clamp_scalar;
+use nalgebra::{clamp, UnitQuaternion, Vector3, Isometry3, Unit, Quaternion};
 use specs::{System, Read, ReadStorage, WriteStorage, Write};
 use vulkano::swapchain::Surface;
 use winit::{event::VirtualKeyCode, window::{CursorGrabMode}, dpi::PhysicalPosition};
@@ -110,7 +110,7 @@ impl<'a> System<'a> for PlayerInput {
                 m.last_y = y;
 
                 m.yaw += dx * m.sensitivity;
-                m.pitch = clamp_scalar(m.pitch + dy * m.sensitivity, 0.0, 179.0);
+                m.pitch = clamp(m.pitch + dy * m.sensitivity, -89.0, 89.0);
 
                 if m.yaw > 360.0 {
                     m.yaw -= 360.0;
@@ -119,30 +119,20 @@ impl<'a> System<'a> for PlayerInput {
                     m.yaw += 360.0;
                 }
 
-                let qx = nalgebra_glm::quat_rotate(
-                    &nalgebra_glm::Quat::identity(), 
-                    m.yaw.to_radians(), 
-                    &nalgebra_glm::vec3(0.0, 0.0, 1.0)
-                );
-                let right = nalgebra_glm::quat_rotate_vec3(
-                    &qx.normalize(), 
-                    &nalgebra_glm::vec3(1.0, 0.0, 0.0)
-                );
-                let qy = nalgebra_glm::quat_rotate(
-                    &nalgebra_glm::Quat::identity(), 
+                // roll, pitch, yaw is actually x,y,z
+                t.rot = UnitQuaternion::from_euler_angles(
                     m.pitch.to_radians(), 
-                    &right
+                    m.yaw.to_radians(),
+                    0.0
                 );
-
-                t.rot = qy * qx;
             }
 
-            let mut cum_move = nalgebra_glm::vec3(0.0, 0.0, 0.0);
+            let mut cum_move = Vector3::new(0.0, 0.0, 0.0);
             if input.key_held(VirtualKeyCode::W) {
-                cum_move -= t.forward() * m.speed;
+                cum_move += t.forward() * m.speed;
             }
             if input.key_held(VirtualKeyCode::S) {
-                cum_move += t.forward() * m.speed;
+                cum_move -= t.forward() * m.speed;
             }
             if input.key_held(VirtualKeyCode::A) {
                 cum_move -= t.right() * m.speed;

@@ -1,5 +1,5 @@
 use engine::{HawkEngine, start_engine, ecs::{components::general::{Transform, Camera, Movement}, resources::ActiveCamera}};
-use nalgebra_glm::vec3;
+use nalgebra::Vector3;
 use specs::{WorldExt, Builder};
 
 fn main() {
@@ -25,7 +25,7 @@ fn main() {
                     .create_entity()
                     .with(v)
                     .with(Transform {
-                        pos: vec3(0.0, 0.0, i as f32 * 1.0),
+                        pos: Vector3::new(0.0, i as f32 * 1.0, -1.0),
                         ..Transform::default()
                     })
                     .build();

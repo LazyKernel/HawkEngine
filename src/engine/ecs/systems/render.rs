@@ -51,7 +51,10 @@ impl<'a> System<'a> for Render {
 
         // Get camera view matrix from transform
         let camera_transform = transform.get(active_camera.0).unwrap();
-        let view_matrix = nalgebra_glm::inverse(&camera_transform.transformation_matrix());
+        let view_matrix = match camera_transform.transformation_matrix().try_inverse() {
+            Some(v) => v,
+            None => return error!("Somehow view matrix is not square, aborting rendering")
+        };
 
         // Create a command buffer
         let mut builder = AutoCommandBufferBuilder::primary(

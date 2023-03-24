@@ -2,6 +2,7 @@
 name = "hawk-engine"
 version = "0.1.0"
 edition = "2021"
+authors = ["LazyKernel"]
 
 [lib]
 name = "engine"
@@ -18,9 +19,10 @@ anyhow = "1.0.65"
 bytemuck = "1.12.1"
 lazy_static = "1.4.0"
 log = "0.4.17"
-nalgebra-glm = "0.17.0"
+nalgebra = "0.32.2"
 png = "0.17.6"
 pretty_env_logger = "0.4.0"
+rapier3d = { version = "0.17.2", features = ["simd-stable", "serde-serialize"] }
 specs = { version = "0.18.0", features = ["specs-derive"] }
 thiserror = "1.0.37"
 tobj = "3.2.3"

@@ -21,6 +21,7 @@ use ecs::systems::general::PlayerInput;
 use ecs::systems::render::Render;
 use graphics::vulkan::Vulkan;
 use log::{info, trace};
+use nalgebra::Perspective3;
 use shaders::vs::ty::VPUniformBufferObject;
 use specs::{WorldExt, DispatcherBuilder, Dispatcher};
 use vulkano::buffer::CpuBufferPool;
@@ -58,7 +59,7 @@ pub struct HawkEngine<'a> {
 
     pub vulkan: Vulkan,
 
-    pub ecs: ECS<'a>,
+    pub ecs: ECS,
     dispatchers: Vec<Dispatcher<'a,'a>>,
     event_loop: EventLoop<()>
 }
@@ -124,12 +125,12 @@ pub fn start_engine(mut engine: HawkEngine<'static>) {
     let mut destroying = false;
     let mut recreate_swapchain = false;
 
-    let mut proj = nalgebra_glm::perspective(
+    let mut proj = Perspective3::new(
         engine.swapchain.image_extent()[0] as f32 / engine.swapchain.image_extent()[1] as f32,
-        nalgebra_glm::radians(&nalgebra_glm::vec1(45.0))[0],
+        (45.0 as f32).to_radians(),
         0.1,
         1000.0,
-    );
+    ).to_homogeneous();
     // convert from OpenGL to Vulkan coordinates
     proj[(1, 1)] *= -1.0;
     
@@ -209,12 +210,12 @@ pub fn start_engine(mut engine: HawkEngine<'static>) {
                     engine.framebuffers = new_framebuffers;
 
                     // Recreate projection matrix
-                    let mut proj = nalgebra_glm::perspective(
+                    let mut proj = Perspective3::new(
                         engine.swapchain.image_extent()[0] as f32 / engine.swapchain.image_extent()[1] as f32,
-                        nalgebra_glm::radians(&nalgebra_glm::vec1(45.0))[0],
+                        (45.0 as f32).to_radians(),
                         0.1,
                         1000.0,
-                    );
+                    ).to_homogeneous();
                     // convert from OpenGL to Vulkan coordinates
                     proj[(1, 1)] *= -1.0;
 
