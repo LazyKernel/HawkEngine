@@ -20,16 +20,10 @@ impl<'a> System<'a> for PlayerInput {
         Write<'a, CursorGrab>,
         ReadStorage<'a, Camera>,
         WriteStorage<'a, Movement>,
-        // we need either transform or rigidbody
         WriteStorage<'a, Transform>,
-
-        // If we have the following, the player has a collider and should instead use physics based movement
-        Option<Write<'a, PhysicsData>>,
-        WriteStorage<'a, RigidBodyComponent>,
-        ReadStorage<'a, ColliderComponent>
     );
 
-    fn run(&mut self, (delta, input, surface, mut cursor_grabbed, camera, mut movement, mut transform, mut physics_data, mut rigid_body, collider): Self::SystemData) {
+    fn run(&mut self, (delta, input, surface, mut cursor_grabbed, camera, mut movement, mut transform): Self::SystemData) {
         use specs::Join;
         // Verify we have all dependencies
         // Abort if not
@@ -103,29 +97,18 @@ impl<'a> System<'a> for PlayerInput {
             None => (0.0, 0.0)
         };
 
-        // Entities with no rigidbody
-        for (_, m, t, ()) in (&camera, &mut movement, &mut transform, !&rigid_body).join() {
-            t.rot = self.calculate_rotation(x, y, last_x, last_y, m);
-            t.pos += self.calculate_movement(&input, &t.rot, m);
-        }
-
-        // Entities with a physics component
-        for (_, m, r, c) in (&camera, &mut movement, &mut rigid_body, &collider).join() {
-            let rot = self.calculate_rotation(x, y, last_x, last_y, m);
-            let translation = self.calculate_movement(&input, &rot, m);
-
-            let physics_data = match &mut physics_data {
+        for (_, m, t) in (&camera, &mut movement, &mut transform).join() {
+            t.rot = match self.calculate_rotation(x, y, last_x, last_y, m) {
                 Some(v) => v,
-                None => return error!("No PhysicsData resource, cannot use physics based movement for player")
+                None => t.rot
             };
-
-            r.apply_movement(Some(&translation), Some(&rot), delta.0, c, physics_data);
+            t.apply_movement(&self.calculate_movement(&input, &t.rot, m));
         }
     }
 }
 
 impl PlayerInput {
-    fn calculate_rotation(&self, x: f32, y: f32, last_x: Option<f32>, last_y: Option<f32>, m: &mut Movement) -> UnitQuaternion<f32> {
+    fn calculate_rotation(&self, x: f32, y: f32, last_x: Option<f32>, last_y: Option<f32>, m: &mut Movement) -> Option<UnitQuaternion<f32>> {
         let (last_x, last_y) = match (last_x, last_y) {
             (Some(x), Some(y)) => (x, y),
             (_, _) => (m.last_x, m.last_y)
@@ -150,14 +133,14 @@ impl PlayerInput {
             }
 
             // roll, pitch, yaw is actually x,y,z
-            UnitQuaternion::from_euler_angles(
-                m.pitch.to_radians() * 0.001, 
-                m.yaw.to_radians() * 0.001,
+            Some(UnitQuaternion::from_euler_angles(
+                m.pitch.to_radians(), 
+                m.yaw.to_radians(),
                 0.0
-            )
+            ))
         }
         else {
-            UnitQuaternion::identity()
+            None
         }
     }
 

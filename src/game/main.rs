@@ -25,6 +25,7 @@ fn main() {
     let camera_entity = world
         .create_entity()
         .with(Camera)
+        .with(Transform::default())
         .with(Movement {speed: 0.1, sensitivity: 0.1, yaw: 0.0, pitch: 0.0, last_x: 0.0, last_y: 0.0})
         .with(ColliderComponent::new(collider, Some(&rigid_body_component.handle), &mut physics_data))
         .with(rigid_body_component)

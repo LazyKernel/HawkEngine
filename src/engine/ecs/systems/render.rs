@@ -18,12 +18,10 @@ impl<'a> System<'a> for Render {
         Read<'a, ProjectionMatrix>,
         ReadStorage<'a, Camera>,
         ReadStorage<'a, Transform>,
-        ReadStorage<'a, RigidBodyComponent>,
-        ReadStorage<'a, Renderable>,
-        Option<Read<'a, PhysicsData>>
+        ReadStorage<'a, Renderable>
     );
 
-    fn run(&mut self, (entities, active_cam, render_data, framebuffer, mut command_buffer, proj, _camera, transform, rigid_body, renderable, physics_data): Self::SystemData) {
+    fn run(&mut self, (entities, active_cam, render_data, framebuffer, mut command_buffer, proj, _camera, transform, renderable): Self::SystemData) {
         use specs::Join;
         // Verify we have all dependencies
         // Abort if not
@@ -56,26 +54,11 @@ impl<'a> System<'a> for Render {
             Some(t) => {
                 match t.transformation_matrix().try_inverse() {
                     Some(v) => v,
-                    None => return error!("Somehow view matrix is not square, aborting rendering. TRANSFORM")
+                    None => return error!("Somehow view matrix is not square, aborting rendering")
                 }
             }
-            // No transform on active camera, it is probably a physics object then
-            None => {
-                match rigid_body.get(active_camera.0) {
-                    Some(r) => {
-                        let pd = match physics_data {
-                            Some(v) => v,
-                            None => return error!("PhysicsData is null, we need this in order to render if the camera is a physics object")
-                        };
-
-                        match r.transformation_matrix(&pd).try_inverse() {
-                            Some(v) => v,
-                            None => return error!("Somehow view matrix is not square, aborting rendering. RIGIDBODY")
-                        }
-                    }
-                    None => return error!("No RigidBodyComponent or Transform on active camera, cannot render!")
-                }
-            }
+            // No transform on active camera
+            None => return error!("No Transform on active camera, cannot render!")
         };
 
         // Create a command buffer
