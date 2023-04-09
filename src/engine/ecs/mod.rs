@@ -2,7 +2,7 @@ use specs::{World, WorldExt};
 
 use crate::ecs::components::general::{Transform, Renderable};
 
-use self::components::general::{Camera, Movement};
+use self::components::{general::{Camera, Movement}, physics::{RigidBodyComponent, ColliderComponent}};
 
 pub mod components;
 pub mod resources;
@@ -24,5 +24,7 @@ impl ECS {
         world.register::<Renderable>();
         world.register::<Camera>();
         world.register::<Movement>();
+        world.register::<RigidBodyComponent>();
+        world.register::<ColliderComponent>();
     }
 }

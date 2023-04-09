@@ -30,3 +30,6 @@ pub struct ActiveCamera(pub Entity);
 
 #[derive(Default)]
 pub struct CursorGrab(pub bool);
+
+#[derive(Default)]
+pub struct DeltaTime(pub f32);

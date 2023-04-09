@@ -1,6 +1,7 @@
-use specs::{System, Write};
+use rapier3d::prelude::IntegrationParameters;
+use specs::{System, Write, Read};
 
-use crate::ecs::resources::physics::PhysicsData;
+use crate::ecs::resources::{physics::PhysicsData, DeltaTime};
 
 
 pub struct Physics;
@@ -8,9 +9,10 @@ pub struct Physics;
 impl<'a> System<'a> for Physics {
     type SystemData = (
         Write<'a, PhysicsData>,
+        Read<'a, DeltaTime>
     );
 
-    fn run(&mut self, (mut physics_data,): Self::SystemData) {
+    fn run(&mut self, (mut physics_data, delta_time): Self::SystemData) {
         let (
             gravity, 
             integration_params,
@@ -25,9 +27,15 @@ impl<'a> System<'a> for Physics {
             ccd_solver
         ) = physics_data.split_borrow();
 
+        // Using non-fixed time step
+        let new_integration_params = IntegrationParameters {
+            dt: delta_time.0,
+            ..*integration_params
+        };
+
         physics_pipeline.step(
             &gravity,
-            &integration_params,
+            &new_integration_params,
             island_manager,
             broad_phase,
             narrow_phase,

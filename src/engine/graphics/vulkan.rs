@@ -476,7 +476,14 @@ impl Vulkan {
                 }
             }
         };
+    
+        return self.create_vertex_buffers(vertices, indices);
+    }
 
+    fn create_vertex_buffers(&self, vertices: Vec<Vertex>, indices: Vec<u32>) -> (
+        Arc<CpuAccessibleBuffer<[Vertex]>>, 
+        Arc<CpuAccessibleBuffer<[u32]>>
+    ) {
         let vertex_buffer = CpuAccessibleBuffer::from_iter(
             &self.buffer_memory_allocator,
             BufferUsage {
@@ -496,19 +503,42 @@ impl Vulkan {
             false,
             indices.into_iter()
         ).unwrap();
-    
+
         return (vertex_buffer, index_buffer);
     }
 
-    
     pub fn create_renderable(&self, model_name: &str, pipeline_name: Option<String>) -> Result<Renderable, String> {
         let model_path = format!("resources/{}.obj", model_name);
         let texture_path = format!("resources/{}.png", model_name);
         let (vertices, indices) = self.load_model(&model_path);
         let (texture, image_upload) = self.load_image(&texture_path);
+        
+        self.internal_create_renderable(&vertices, &indices, &texture, pipeline_name)
+    }
+
+    pub fn create_renderable_from_vertices(
+        &self, 
+        vertices: Vec<Vertex>, 
+        indices: Vec<u32>, 
+        texture_name: &str,
+        pipeline_name: Option<String>
+    ) -> Result<Renderable, String> {
+        let texture_path = format!("resources/{}.png", texture_name);
+        let (vertices, indices) = self.create_vertex_buffers(vertices, indices);
+        let (texture, image_upload) = self.load_image(&texture_path);
         // TODO: save image_upload to an array and periodically check if they are finished
         // Should also probably check that the upload has finished before using it
 
+        self.internal_create_renderable(&vertices, &indices, &texture, pipeline_name)
+    }
+
+    fn internal_create_renderable(
+        &self, 
+        vertices: &Arc<CpuAccessibleBuffer<[Vertex]>>, 
+        indices: &Arc<CpuAccessibleBuffer<[u32]>>, 
+        texture: &Arc<ImageView<ImmutableImage>>,
+        pipeline_name: Option<String>
+    ) -> Result<Renderable, String> {
         let pipeline_name = match pipeline_name {
             Some(v) => v,
             None => "default".into()
@@ -528,7 +558,8 @@ impl Vulkan {
             [WriteDescriptorSet::image_view_sampler(0, texture.clone(), self.sampler.clone())]
         ).unwrap();
 
-        Ok(Renderable { vertex_buffer: vertices, index_buffer: indices, descriptor_set_texture })
-    }
+        Ok(Renderable { vertex_buffer: vertices.clone(), index_buffer: indices.clone(), descriptor_set_texture })
+    } 
+    
 
 }

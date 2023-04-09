@@ -13,11 +13,13 @@
 mod data_structures;
 pub mod ecs;
 mod graphics;
+mod physics;
 mod shaders;
 
 use ecs::ECS;
-use ecs::resources::{ProjectionMatrix, RenderData, CommandBuffer, RenderDataFrameBuffer, CursorGrab};
+use ecs::resources::{ProjectionMatrix, RenderData, CommandBuffer, RenderDataFrameBuffer, CursorGrab, DeltaTime};
 use ecs::systems::general::PlayerInput;
+use ecs::systems::physics::Physics;
 use ecs::systems::render::Render;
 use graphics::vulkan::Vulkan;
 use log::{info, trace};
@@ -33,6 +35,7 @@ use vulkano::sync::FlushError;
 use winit_input_helper::WinitInputHelper;
 
 use std::sync::Arc;
+use std::time::Instant;
 use winit::event_loop::{ControlFlow, EventLoop};
 use vulkano::device::{
     Device, 
@@ -65,7 +68,10 @@ pub struct HawkEngine<'a> {
 }
 
 impl<'a> HawkEngine<'a> {
-    pub fn new() -> Self {
+    /*
+    If use_physics is true, PhysicsData is expected to be provided as a resource
+    */
+    pub fn new(use_physics: bool) -> Self {
         match pretty_env_logger::try_init() {
             Ok(_) => {},
             Err(e) => trace!("Failed to init pretty_env_logger, probably already initialized: {:?}", e)
@@ -73,7 +79,14 @@ impl<'a> HawkEngine<'a> {
 
         // Create ECS classes
         let ecs = ECS::new();
-        let dispatcher = DispatcherBuilder::new()
+
+        let mut dbuilder = DispatcherBuilder::new();
+
+        if use_physics {
+            dbuilder.add(Physics, "physics", &[]);
+        }
+
+        let dispatcher = dbuilder
             // Using thread_local for player input for a couple of reasons
             // 1. it's probably a good idea to have the camera view be updated 
             //    in a single thread while there are no other updates going on
@@ -153,6 +166,10 @@ pub fn start_engine(mut engine: HawkEngine<'static>) {
     engine.ecs.world.insert(RenderDataFrameBuffer(engine.framebuffers[0].clone()));
     // Add empty command buffer
     engine.ecs.world.insert(CommandBuffer { command_buffer: None });
+    // Add 0 delta time
+    engine.ecs.world.insert(DeltaTime(0.0));
+
+    let mut last_time = Instant::now();
 
     // look into this when rendering https://www.reddit.com/r/vulkan/comments/e7n5b6/drawing_multiple_objects/
     engine.event_loop.run(move |event, _, control_flow| {
@@ -246,6 +263,12 @@ pub fn start_engine(mut engine: HawkEngine<'static>) {
                 
                 let mut input_res = engine.ecs.world.write_resource::<Arc<WinitInputHelper>>();
                 *input_res = Arc::new(input.clone());
+
+                // Update delta time
+                let delta = Instant::now() - last_time;
+                let mut deltatime_resource = engine.ecs.world.write_resource::<DeltaTime>();
+                *deltatime_resource = DeltaTime(delta.as_secs_f32());
+                last_time = Instant::now();
             }
 
             // Iterate through all dispatchers, with the internal being last

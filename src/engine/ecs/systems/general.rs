@@ -2,26 +2,34 @@ use std::sync::Arc;
 
 use log::{error, debug};
 use nalgebra::{clamp, UnitQuaternion, Vector3};
+use rapier3d::prelude::RigidBody;
 use specs::{System, Read, ReadStorage, WriteStorage, Write};
 use vulkano::swapchain::Surface;
 use winit::{event::VirtualKeyCode, window::{CursorGrabMode}, dpi::PhysicalPosition};
 use winit_input_helper::WinitInputHelper;
 
-use crate::{ecs::{components::general::{Camera, Transform, Movement}, resources::CursorGrab}, graphics::utils::get_window_from_surface};
+use crate::{ecs::{components::{general::{Camera, Transform, Movement}, physics::{RigidBodyComponent, ColliderComponent}}, resources::{CursorGrab, physics::PhysicsData, DeltaTime}}, graphics::utils::get_window_from_surface};
 
 pub struct PlayerInput;
 
 impl<'a> System<'a> for PlayerInput {
     type SystemData = (
+        Read<'a, DeltaTime>,
         Option<Read<'a, Arc<WinitInputHelper>>>,
         Option<Read<'a, Arc<Surface>>>,
         Write<'a, CursorGrab>,
         ReadStorage<'a, Camera>,
         WriteStorage<'a, Movement>,
+        // we need either transform or rigidbody
         WriteStorage<'a, Transform>,
+
+        // If we have the following, the player has a collider and should instead use physics based movement
+        Option<Write<'a, PhysicsData>>,
+        WriteStorage<'a, RigidBodyComponent>,
+        ReadStorage<'a, ColliderComponent>
     );
 
-    fn run(&mut self, (input, surface, mut cursor_grabbed, camera, mut movement, mut transform): Self::SystemData) {
+    fn run(&mut self, (delta, input, surface, mut cursor_grabbed, camera, mut movement, mut transform, mut physics_data, mut rigid_body, collider): Self::SystemData) {
         use specs::Join;
         // Verify we have all dependencies
         // Abort if not
@@ -89,59 +97,87 @@ impl<'a> System<'a> for PlayerInput {
             return
         }
 
-        for (_, m, t) in (&camera, &mut movement, &mut transform).join() {
-            let (last_x, last_y) = match (last_x, last_y) {
-                (Some(x), Some(y)) => (x, y),
-                (_, _) => (m.last_x, m.last_y)
-            };
+        // the mouse should never be outside but taking it into account still
+        let (x, y) = match input.mouse() {
+            Some(v) => v,
+            None => (0.0, 0.0)
+        };
 
-            // the mouse should never be outside but taking it into account still
-            let (x, y) = match input.mouse() {
-                Some(v) => v,
-                None => (0.0, 0.0)
-            };
-
-            let mouse_diff = (last_x - x, last_y - y);
-
-            if mouse_diff != (0.0, 0.0) {
-                let (dx, dy) = mouse_diff;
-
-                m.last_x = x;
-                m.last_y = y;
-
-                m.yaw += dx * m.sensitivity;
-                m.pitch = clamp(m.pitch + dy * m.sensitivity, -89.0, 89.0);
-
-                if m.yaw > 360.0 {
-                    m.yaw -= 360.0;
-                }
-                else if m.yaw < 0.0 {
-                    m.yaw += 360.0;
-                }
-
-                // roll, pitch, yaw is actually x,y,z
-                t.rot = UnitQuaternion::from_euler_angles(
-                    m.pitch.to_radians(), 
-                    m.yaw.to_radians(),
-                    0.0
-                );
-            }
-
-            let mut cum_move = Vector3::new(0.0, 0.0, 0.0);
-            if input.key_held(VirtualKeyCode::W) {
-                cum_move += t.forward() * m.speed;
-            }
-            if input.key_held(VirtualKeyCode::S) {
-                cum_move -= t.forward() * m.speed;
-            }
-            if input.key_held(VirtualKeyCode::A) {
-                cum_move -= t.right() * m.speed;
-            }
-            if input.key_held(VirtualKeyCode::D) {
-                cum_move += t.right() * m.speed;
-            }
-
-            t.pos += cum_move;
+        // Entities with no rigidbody
+        for (_, m, t, ()) in (&camera, &mut movement, &mut transform, !&rigid_body).join() {
+            t.rot = self.calculate_rotation(x, y, last_x, last_y, m);
+            t.pos += self.calculate_movement(&input, &t.rot, m);
         }
+
+        // Entities with a physics component
+        for (_, m, r, c) in (&camera, &mut movement, &mut rigid_body, &collider).join() {
+            let rot = self.calculate_rotation(x, y, last_x, last_y, m);
+            let translation = self.calculate_movement(&input, &rot, m);
+
+            let physics_data = match &mut physics_data {
+                Some(v) => v,
+                None => return error!("No PhysicsData resource, cannot use physics based movement for player")
+            };
+
+            r.apply_movement(Some(&translation), Some(&rot), delta.0, c, physics_data);
+        }
+    }
+}
+
+impl PlayerInput {
+    fn calculate_rotation(&self, x: f32, y: f32, last_x: Option<f32>, last_y: Option<f32>, m: &mut Movement) -> UnitQuaternion<f32> {
+        let (last_x, last_y) = match (last_x, last_y) {
+            (Some(x), Some(y)) => (x, y),
+            (_, _) => (m.last_x, m.last_y)
+        };
+
+        let mouse_diff = (last_x - x, last_y - y);
+
+        if mouse_diff != (0.0, 0.0) {
+            let (dx, dy) = mouse_diff;
+
+            m.last_x = x;
+            m.last_y = y;
+
+            m.yaw += dx * m.sensitivity;
+            m.pitch = clamp(m.pitch + dy * m.sensitivity, -89.0, 89.0);
+
+            if m.yaw > 360.0 {
+                m.yaw -= 360.0;
+            }
+            else if m.yaw < 0.0 {
+                m.yaw += 360.0;
+            }
+
+            // roll, pitch, yaw is actually x,y,z
+            UnitQuaternion::from_euler_angles(
+                m.pitch.to_radians() * 0.001, 
+                m.yaw.to_radians() * 0.001,
+                0.0
+            )
+        }
+        else {
+            UnitQuaternion::identity()
+        }
+    }
+
+    fn calculate_movement(&self, input: &Arc<WinitInputHelper>, rot: &UnitQuaternion<f32>, m: &Movement) -> Vector3<f32> {
+        let forward = rot * Vector3::new(0.0, 0.0, -1.0);
+        let right = rot * Vector3::new(1.0, 0.0, 0.0);
+
+        let mut cum_move = Vector3::new(0.0, 0.0, 0.0);
+        if input.key_held(VirtualKeyCode::W) {
+            cum_move += forward * m.speed;
+        }
+        if input.key_held(VirtualKeyCode::S) {
+            cum_move -= forward * m.speed;
+        }
+        if input.key_held(VirtualKeyCode::A) {
+            cum_move -= right * m.speed;
+        }
+        if input.key_held(VirtualKeyCode::D) {
+            cum_move += right * m.speed;
+        }
+        return cum_move;
     }
 }

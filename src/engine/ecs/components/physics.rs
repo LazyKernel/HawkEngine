@@ -1,6 +1,6 @@
-use log::error;
-use nalgebra::Matrix4;
-use rapier3d::prelude::{RigidBodyHandle, RigidBody, Collider, ColliderHandle};
+use log::{error, warn};
+use nalgebra::{Matrix4, Vector3, Quaternion, Isometry, UnitQuaternion};
+use rapier3d::{prelude::{RigidBodyHandle, RigidBody, Collider, ColliderHandle, QueryFilter, Real}, control::KinematicCharacterController};
 use specs::{Component, VecStorage};
 
 use crate::ecs::resources::physics::PhysicsData;
@@ -9,16 +9,21 @@ use crate::ecs::resources::physics::PhysicsData;
 #[derive(Component, Default, Debug)]
 #[storage(VecStorage)]
 pub struct RigidBodyComponent {
-    handle: RigidBodyHandle
+    pub handle: RigidBodyHandle,
+    ccontrol: Option<KinematicCharacterController>
 }
 
 impl RigidBodyComponent {
-    pub fn new(rigid_body: RigidBody, physics_data: &mut PhysicsData) -> Self {
+    pub fn new(rigid_body: RigidBody, physics_data: &mut PhysicsData, character_controller: Option<KinematicCharacterController>) -> Self {
+        if character_controller.is_some() && !rigid_body.is_kinematic() {
+            warn!("KinematicCharacterController is set but rigid body is not set to kinematic, this rigid body will not move!");
+        }
+
         let handle = physics_data.rigid_body_set.insert(rigid_body);
-        RigidBodyComponent { handle }
+        RigidBodyComponent { handle, ccontrol: character_controller }
     }
 
-    pub fn transformation_matrix(&self, physics_data: &mut PhysicsData) -> Matrix4<f32> {
+    pub fn transformation_matrix(&self, physics_data: &PhysicsData) -> Matrix4<f32> {
         let rigid_body = physics_data.rigid_body_set.get(self.handle);
 
         match rigid_body {
@@ -34,22 +39,81 @@ impl RigidBodyComponent {
             }
         }
     }
+
+    pub fn position(&self, physics_data: &PhysicsData) -> Isometry<f32, nalgebra::Unit<Quaternion<f32>>, 3> {
+        let rigid_body = physics_data.rigid_body_set.get(self.handle);
+
+        match rigid_body {
+            Some(v) => {
+                *v.position()
+            }
+            None => {
+                error!("Could not find entity with handle: {:?}", self.handle);
+                Isometry::default()
+            }
+        }
+    }
+
+    /*
+    Applies movement if this component has a KinematicCharacterController
+    */
+    pub fn apply_movement(&self, movement: Option<&Vector3<f32>>, rotation: Option<&UnitQuaternion<Real>>, dt: f32, collider: &ColliderComponent, physics_data: &mut PhysicsData) {
+        let cc = match self.ccontrol {
+            Some(v) => v,
+            None => return error!("Tried to apply movement to a RigidBodyComponent which has no KinematicCharacterController")
+        };
+
+        let collider = match physics_data.collider_set.get(collider.handle) {
+            Some(v) => v,
+            None => return error!("Could not find collider with handle {:?}", collider.handle)
+        };
+
+        let mut position = self.position(physics_data);
+
+        match movement {
+            Some(v) => {
+                let corrected_movement = cc.move_shape(
+                    dt, 
+                    &physics_data.rigid_body_set, 
+                    &physics_data.collider_set,
+                    &physics_data.query_pipeline, 
+                    collider.shape(), 
+                    &position, 
+                    *v, 
+                    QueryFilter::default().exclude_rigid_body(self.handle), 
+                    |_| {}
+                );
+        
+                position.append_translation_mut(&corrected_movement.translation.into());
+            },
+            None => ()
+        }
+
+        match rotation {
+            Some(v) => position.append_rotation_wrt_center_mut(v),
+            None => ()
+        }
+        
+        match physics_data.rigid_body_set.get_mut(self.handle) {
+            Some(v) => v.set_next_kinematic_position(position),
+            None => error!("Was unable to get rigid body with handle {:?}", self.handle)
+        }
+    }
 }
 
 
 #[derive(Component, Default, Debug)]
 #[storage(VecStorage)]
 pub struct ColliderComponent {
-    handle: ColliderHandle,
-    parent_handle: Option<RigidBodyHandle>
+    handle: ColliderHandle
 }
 
 impl ColliderComponent {
-    pub fn new(collider: Collider, parent_handle: Option<RigidBodyHandle>, physics_data: &mut PhysicsData) -> Self {
+    pub fn new(collider: Collider, parent_handle: Option<&RigidBodyHandle>, physics_data: &mut PhysicsData) -> Self {
         let handle = match parent_handle {
-            Some(v) => physics_data.collider_set.insert_with_parent(collider, v, &mut physics_data.rigid_body_set),
+            Some(v) => physics_data.collider_set.insert_with_parent(collider, *v, &mut physics_data.rigid_body_set),
             None => physics_data.collider_set.insert(collider)
         };
-        ColliderComponent { handle, parent_handle }
+        ColliderComponent { handle }
     }
 }

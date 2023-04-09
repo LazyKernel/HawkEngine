@@ -1,5 +1,5 @@
 use nalgebra::Vector3;
-use rapier3d::prelude::{RigidBodySet, ColliderSet, IntegrationParameters, PhysicsPipeline, IslandManager, BroadPhase, NarrowPhase, ImpulseJointSet, MultibodyJointSet, CCDSolver};
+use rapier3d::prelude::{RigidBodySet, ColliderSet, IntegrationParameters, PhysicsPipeline, IslandManager, BroadPhase, NarrowPhase, ImpulseJointSet, MultibodyJointSet, CCDSolver, QueryPipeline};
 
 
 #[derive(Default)]
@@ -15,7 +15,8 @@ pub struct PhysicsData {
     pub narrow_phase: NarrowPhase,
     pub impulse_joint_set: ImpulseJointSet,
     pub multibody_joint_set: MultibodyJointSet,
-    pub ccd_solver: CCDSolver
+    pub ccd_solver: CCDSolver,
+    pub query_pipeline: QueryPipeline
 }
 
 impl PhysicsData {

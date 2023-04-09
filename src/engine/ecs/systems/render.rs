@@ -4,7 +4,7 @@ use log::error;
 use specs::{System, ReadStorage, Read, Write, Entities};
 use vulkano::{command_buffer::{RenderPassBeginInfo, SubpassContents, AutoCommandBufferBuilder, CommandBufferUsage}, descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet}, pipeline::{Pipeline, PipelineBindPoint}, buffer::TypedBufferAccess};
 
-use crate::{ecs::{components::general::{Transform, Renderable, Camera}, resources::{ActiveCamera, RenderData, ProjectionMatrix, CommandBuffer, RenderDataFrameBuffer}}, shaders::vs::ty::{VPUniformBufferObject, ModelPushConstants}};
+use crate::{ecs::{components::{general::{Transform, Renderable, Camera}, physics::RigidBodyComponent}, resources::{ActiveCamera, RenderData, ProjectionMatrix, CommandBuffer, RenderDataFrameBuffer, physics::PhysicsData}}, shaders::vs::ty::{VPUniformBufferObject, ModelPushConstants}};
 
 pub struct Render;
 
@@ -18,10 +18,12 @@ impl<'a> System<'a> for Render {
         Read<'a, ProjectionMatrix>,
         ReadStorage<'a, Camera>,
         ReadStorage<'a, Transform>,
-        ReadStorage<'a, Renderable>
+        ReadStorage<'a, RigidBodyComponent>,
+        ReadStorage<'a, Renderable>,
+        Option<Read<'a, PhysicsData>>
     );
 
-    fn run(&mut self, (entities, active_cam, render_data, framebuffer, mut command_buffer, proj, _camera, transform, renderable): Self::SystemData) {
+    fn run(&mut self, (entities, active_cam, render_data, framebuffer, mut command_buffer, proj, _camera, transform, rigid_body, renderable, physics_data): Self::SystemData) {
         use specs::Join;
         // Verify we have all dependencies
         // Abort if not
@@ -50,10 +52,30 @@ impl<'a> System<'a> for Render {
         };
 
         // Get camera view matrix from transform
-        let camera_transform = transform.get(active_camera.0).unwrap();
-        let view_matrix = match camera_transform.transformation_matrix().try_inverse() {
-            Some(v) => v,
-            None => return error!("Somehow view matrix is not square, aborting rendering")
+        let view_matrix = match transform.get(active_camera.0) {
+            Some(t) => {
+                match t.transformation_matrix().try_inverse() {
+                    Some(v) => v,
+                    None => return error!("Somehow view matrix is not square, aborting rendering. TRANSFORM")
+                }
+            }
+            // No transform on active camera, it is probably a physics object then
+            None => {
+                match rigid_body.get(active_camera.0) {
+                    Some(r) => {
+                        let pd = match physics_data {
+                            Some(v) => v,
+                            None => return error!("PhysicsData is null, we need this in order to render if the camera is a physics object")
+                        };
+
+                        match r.transformation_matrix(&pd).try_inverse() {
+                            Some(v) => v,
+                            None => return error!("Somehow view matrix is not square, aborting rendering. RIGIDBODY")
+                        }
+                    }
+                    None => return error!("No RigidBodyComponent or Transform on active camera, cannot render!")
+                }
+            }
         };
 
         // Create a command buffer
