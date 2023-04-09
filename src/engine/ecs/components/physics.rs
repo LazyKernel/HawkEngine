@@ -54,6 +54,10 @@ impl RigidBodyComponent {
         }
     }
 
+    pub fn has_character_controller(&self) -> bool {
+        self.ccontrol.is_some()
+    }
+
     /*
     Applies movement if this component has a KinematicCharacterController
     */

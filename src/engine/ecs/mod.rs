@@ -7,6 +7,7 @@ use self::components::{general::{Camera, Movement}, physics::{RigidBodyComponent
 pub mod components;
 pub mod resources;
 pub mod systems;
+pub mod utils;
 
 pub struct ECS {
     pub world: World

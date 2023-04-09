@@ -7,7 +7,7 @@ use crate::data_structures::graphics::Vertex;
 
 
 #[derive(Component, Debug)]
-#[storage(HashMapStorage)]
+#[storage(VecStorage)]
 pub struct Transform {
     /*
     Coordinate system is right handed, -z forward, y up, x right

@@ -1,4 +1,5 @@
-use engine::{HawkEngine, start_engine, ecs::{components::{general::{Transform, Camera, Movement}, physics::{RigidBodyComponent, ColliderComponent}}, resources::{ActiveCamera, physics::PhysicsData}}};
+use log::error;
+use engine::{HawkEngine, start_engine, ecs::{components::{general::{Transform, Camera, Movement}, physics::{RigidBodyComponent, ColliderComponent}}, resources::{ActiveCamera, physics::PhysicsData}, utils::objects::create_terrain}};
 use nalgebra::Vector3;
 use rapier3d::{control::KinematicCharacterController, prelude::{RigidBodyBuilder, RigidBodyType, ColliderBuilder, SharedShape}};
 use specs::{WorldExt, Builder};
@@ -31,6 +32,29 @@ fn main() {
         .with(rigid_body_component)
         .build();
     world.insert(ActiveCamera(camera_entity));
+    
+    // Add a terrain
+    let (
+        terrain_renderable, 
+        terrain_rigid_body, 
+        terrain_collider
+    ) = create_terrain("terrain", "grass", &engine.vulkan);
+
+    match terrain_renderable {
+        Ok(v) => {
+            let terrain_rb_comp = RigidBodyComponent::new(terrain_rigid_body, &mut physics_data, None);
+
+            let terrain = world
+                .create_entity()
+                .with(v)
+                .with(Transform::default())
+                .with(ColliderComponent::new(terrain_collider, Some(&terrain_rb_comp.handle), &mut physics_data))
+                .with(terrain_rb_comp)
+                .build();
+            world.insert(terrain);
+        },
+        Err(e) => error!("An error occurred while trying to create terrain: {:?}", e)
+    };
     
     // Inserting this last so the components can borrow it
     world.insert(physics_data);

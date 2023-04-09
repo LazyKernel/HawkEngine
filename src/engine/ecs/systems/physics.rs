@@ -21,8 +21,9 @@ impl<'a> System<'a> for Physics {
 
         // Update entities
         for (t, r, c) in (&mut transform, &mut rigid_body, &collider).join() {
-            if t.need_physics_update {
+            if t.need_physics_update && r.has_character_controller() {
                 r.apply_movement(Some(&t.pos), Some(&t.rot), delta_time.0, c, &mut physics_data);
+                t.need_physics_update = false;
             }
         }
 
@@ -61,6 +62,14 @@ impl<'a> System<'a> for Physics {
             None,
             &(),
             &()
-        )
+        );
+
+        // Update transform
+        // TODO: fix mismatch
+        // for (t, r) in (&mut transform, &rigid_body).join() {
+        //     let pos = r.position(&physics_data);
+        //     t.pos = pos.translation.vector;
+        //     //t.rot = pos.rotation;
+        // }
     }
 } 

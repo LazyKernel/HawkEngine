@@ -7,15 +7,34 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'hawk-engine'",
+            "name": "Debug unit tests in library 'engine'",
             "cargo": {
                 "args": [
-                    "build",
-                    "--bin=hawk-engine",
+                    "test",
+                    "--no-run",
+                    "--lib",
                     "--package=hawk-engine"
                 ],
                 "filter": {
-                    "name": "hawk-engine",
+                    "name": "engine",
+                    "kind": "lib"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable 'test-game'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=test-game",
+                    "--package=hawk-engine"
+                ],
+                "filter": {
+                    "name": "test-game",
                     "kind": "bin"
                 }
             },
@@ -25,16 +44,16 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug unit tests in executable 'hawk-engine'",
+            "name": "Debug unit tests in executable 'test-game'",
             "cargo": {
                 "args": [
                     "test",
                     "--no-run",
-                    "--bin=hawk-engine",
+                    "--bin=test-game",
                     "--package=hawk-engine"
                 ],
                 "filter": {
-                    "name": "hawk-engine",
+                    "name": "test-game",
                     "kind": "bin"
                 }
             },
