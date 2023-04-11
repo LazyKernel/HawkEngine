@@ -29,7 +29,7 @@ pub fn create_height_field(path: &String, field_width: u32, field_height: u32) -
         let yf: usize = ((i as f64 * scaleh).floor() as u64).try_into().unwrap();
         for j in 0..fh {
             let xf: usize = ((j as f64 * scalew).floor() as u64).try_into().unwrap();
-            // row-wise packed, assuming rgba, taking the red channel
+            // row-wise packed, assuming single channel
             // TODO: support different formats?
             let val = pixels[yf * w as usize + xf];
             let scaled_val = val as f32 / 255.0;
@@ -101,12 +101,15 @@ pub fn create_terrain_vertices(height_field: &Vec<Vec<f32>>) -> (Vec<Vertex>, Ve
     let mut verts = Vec::<Vertex>::with_capacity(h * w);
     let mut indices = Vec::<u32>::with_capacity(h * w);
 
+    let xcenter = w as f64 / 2.0;
+    let ycenter = h as f64 / 2.0;
+
     for y in 0..h {
         for x in 0..w {
             let z = height_field[y][x];
             // y is up in our coordinate system but were thinking of the height field as a texture (x,y plane)
             let vert = Vertex {
-                position: [x as f32, z, y as f32],
+                position: [(x as f64 - xcenter) as f32, z, (y as f64 - ycenter) as f32],
                 normal: get_smooth_normal(x, y, h, w, &height_field).into(),
                 color: [1.0, 1.0, 1.0],
                 tex_coord: [x as f32 / w as f32, y as f32 / h as f32]

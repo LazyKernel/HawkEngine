@@ -1,21 +1,24 @@
 use crate::data_structures::graphics::Vertex;
 use crate::ecs::components::general::Renderable;
 use crate::shaders;
-use crate::shaders::vs::ty::VPUniformBufferObject;
+use crate::shaders::default::vs::ty::VPUniformBufferObject;
 use vulkano::buffer::cpu_pool::CpuBufferPoolSubbuffer;
 use vulkano::command_buffer::allocator::{StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo};
 use vulkano::descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet};
 use vulkano::descriptor_set::allocator::StandardDescriptorSetAllocator;
 use vulkano::device::physical::{PhysicalDevice, PhysicalDeviceType};
 use vulkano::format::Format;
+use vulkano::instance::debug::ValidationFeatureEnable;
 use vulkano::memory::allocator::{StandardMemoryAllocator, MemoryUsage};
 use vulkano::pipeline::graphics::color_blend::ColorBlendState;
 use vulkano::pipeline::graphics::depth_stencil::DepthStencilState;
+use vulkano::pipeline::graphics::rasterization::{RasterizationState, PolygonMode};
 use vulkano::pipeline::{GraphicsPipeline, Pipeline, PipelineBindPoint};
 use vulkano::pipeline::graphics::input_assembly::InputAssemblyState;
 use vulkano::pipeline::graphics::vertex_input::BuffersDefinition;
 use vulkano::pipeline::graphics::viewport::{Viewport, ViewportState};
 use vulkano::sampler::{Sampler, SamplerCreateInfo, Filter, SamplerAddressMode};
+use vulkano::shader::ShaderModule;
 use vulkano::swapchain::{Swapchain, SwapchainCreateInfo, Surface};
 use vulkano::sync::GpuFuture;
 use vulkano_win::VkSurfaceBuild;
@@ -38,7 +41,7 @@ use vulkano::device::{
     Device,
     DeviceCreateInfo,
     QueueCreateInfo, 
-    Queue, DeviceExtensions
+    Queue, DeviceExtensions, Features
 };
 use vulkano::buffer::{CpuAccessibleBuffer, BufferUsage, TypedBufferAccess, CpuBufferPool};
 use vulkano::command_buffer::{AutoCommandBufferBuilder, CommandBufferUsage, RenderPassBeginInfo, SubpassContents, PrimaryAutoCommandBuffer, PrimaryCommandBufferAbstract};
@@ -48,7 +51,7 @@ use vulkano::render_pass::{RenderPass, Framebuffer, FramebufferCreateInfo, Subpa
 
 #[derive(Clone)]
 pub struct Vulkan {
-    device: Arc<Device>,
+    pub device: Arc<Device>,
     pub queue: Arc<Queue>,
     sampler: Arc<Sampler>,
     pipelines: HashMap<String, Arc<GraphicsPipeline>>,
@@ -183,6 +186,10 @@ impl Vulkan {
                     queue_family_index,
                     ..Default::default()
                 }],
+                enabled_features: Features {
+                    fill_mode_non_solid: true,
+                    ..Default::default()
+                },
                 enabled_extensions: *device_extensions,
                 ..Default::default()
             }
@@ -278,11 +285,11 @@ impl Vulkan {
         pipeline_name: &str,
         render_pass: &Arc<RenderPass>, 
         surface: &Arc<Surface>,
-        viewport: Option<&Viewport>
+        vs: &Arc<ShaderModule>,
+        fs: &Arc<ShaderModule>,
+        viewport: Option<&Viewport>,
+        rasterization_state: Option<&RasterizationState>
     ) -> Arc<GraphicsPipeline> {
-        let vs = shaders::vs::load(self.device.clone()).expect("Failed to create vs");
-        let fs = shaders::fs::load(self.device.clone()).expect("Failed to load fs");
-    
         let viewport_value = match viewport {
             Some(viewport) => viewport.clone(),
             None => Viewport {
@@ -290,6 +297,11 @@ impl Vulkan {
                 dimensions: surface.object().unwrap().downcast_ref::<Window>().unwrap().inner_size().into(),
                 depth_range: 0.0..1.0,
             }
+        };
+
+        let rasterization_state = match rasterization_state {
+            Some(v) => v.clone(),
+            None => RasterizationState::default()
         };
     
         let subpass = Subpass::from(render_pass.clone(), 0).unwrap();
@@ -301,6 +313,7 @@ impl Vulkan {
             .fragment_shader(fs.entry_point("main").unwrap(), ())
             .color_blend_state(ColorBlendState::new(subpass.num_color_attachments()).blend_alpha())
             .depth_stencil_state(DepthStencilState::simple_depth_test())
+            .rasterization_state(rasterization_state)
             .render_pass(Subpass::from(render_pass.clone(), 0).unwrap())
             .build(self.device.clone())
             .unwrap();
@@ -480,7 +493,7 @@ impl Vulkan {
         return self.create_vertex_buffers(vertices, indices);
     }
 
-    fn create_vertex_buffers(&self, vertices: Vec<Vertex>, indices: Vec<u32>) -> (
+    pub fn create_vertex_buffers(&self, vertices: Vec<Vertex>, indices: Vec<u32>) -> (
         Arc<CpuAccessibleBuffer<[Vertex]>>, 
         Arc<CpuAccessibleBuffer<[u32]>>
     ) {

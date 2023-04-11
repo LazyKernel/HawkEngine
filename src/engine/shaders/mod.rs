@@ -1,2 +1,2 @@
-pub mod fs;
-pub mod vs;
+pub mod default;
+pub mod wireframe;

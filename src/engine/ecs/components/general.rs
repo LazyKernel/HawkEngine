@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use nalgebra::{Matrix4, Vector3, UnitQuaternion};
-use specs::{Component, VecStorage, HashMapStorage};
+use specs::{Component, VecStorage, HashMapStorage, NullStorage};
 use vulkano::{buffer::CpuAccessibleBuffer, descriptor_set::PersistentDescriptorSet};
 
 use crate::data_structures::graphics::Vertex;
@@ -71,6 +71,10 @@ pub struct Renderable {
     pub index_buffer: Arc<CpuAccessibleBuffer<[u32]>>,
     pub descriptor_set_texture: Arc<PersistentDescriptorSet>
 }
+
+#[derive(Component, Default)]
+#[storage(NullStorage)]
+pub struct Wireframe;
 
 #[derive(Component, Debug)]
 #[storage(HashMapStorage)]

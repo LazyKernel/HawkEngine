@@ -1,9 +1,12 @@
-use log::{error, warn};
-use nalgebra::{Matrix4, Vector3, Quaternion, Isometry, UnitQuaternion};
-use rapier3d::{prelude::{RigidBodyHandle, RigidBody, Collider, ColliderHandle, QueryFilter, Real}, control::KinematicCharacterController};
-use specs::{Component, VecStorage};
+use std::sync::Arc;
 
-use crate::ecs::resources::physics::PhysicsData;
+use log::{error, warn};
+use nalgebra::{Matrix4, Vector3, Quaternion, Isometry, UnitQuaternion, Point3};
+use rapier3d::{prelude::{RigidBodyHandle, RigidBody, Collider, ColliderHandle, QueryFilter, Real, ShapeType}, control::KinematicCharacterController};
+use specs::{Component, VecStorage, HashMapStorage};
+use vulkano::buffer::CpuAccessibleBuffer;
+
+use crate::{ecs::resources::physics::PhysicsData, data_structures::graphics::Vertex};
 
 
 #[derive(Component, Default, Debug)]
@@ -119,5 +122,52 @@ impl ColliderComponent {
             None => physics_data.collider_set.insert(collider)
         };
         ColliderComponent { handle }
+    }
+
+    pub fn get_vertices(&self, physics_data: &PhysicsData) -> (Vec<Point3<Real>>, Vec<u32>) {
+        let collider = match physics_data.collider_set.get(self.handle) {
+            Some(v) => v,
+            None => {
+                error!("Failed to get collider with handle {:?}", self.handle);
+                return (Vec::<Point3<Real>>::new(), Vec::<u32>::new())
+            }
+        };
+
+        const SUBDIV: u32 = 8;
+        let (points, indices) = match collider.shape().shape_type() {
+            ShapeType::Ball => collider.shape().as_ball().unwrap().to_trimesh(SUBDIV, SUBDIV),
+            ShapeType::Capsule => collider.shape().as_capsule().unwrap().to_trimesh(SUBDIV, SUBDIV),
+            ShapeType::Cuboid => collider.shape().as_cuboid().unwrap().to_trimesh(),
+            ShapeType::HeightField => collider.shape().as_heightfield().unwrap().to_trimesh(),
+            s => {
+                warn!("No mapping for ShapeType {:?}", s);
+                (Vec::<Point3<Real>>::new(), Vec::<[u32; 3]>::new())
+            }
+        };
+
+        (points, indices.iter().flatten().map(|v| *v).collect())
+    }
+}
+
+#[derive(Component)]
+#[storage(HashMapStorage)]
+pub struct ColliderRenderable {
+    pub vertex_buffer: Arc<CpuAccessibleBuffer<[Vertex]>>, 
+    pub index_buffer: Arc<CpuAccessibleBuffer<[u32]>>
+}
+
+impl ColliderRenderable {
+    pub fn convert_to_vertex(vertices: Vec<Point3<Real>>) -> Vec<Vertex> {
+        vertices
+            .iter()
+            .map(|v| {
+                Vertex {
+                    position: v.coords.into(),
+                    normal: [0.0, 0.0, 0.0],
+                    color: [1.0, 0.0, 0.0],
+                    tex_coord: [0.0, 0.0]
+                }
+            })
+            .collect()
     }
 }

@@ -1,5 +1,5 @@
 use log::error;
-use engine::{HawkEngine, start_engine, ecs::{components::{general::{Transform, Camera, Movement}, physics::{RigidBodyComponent, ColliderComponent}}, resources::{ActiveCamera, physics::PhysicsData}, utils::objects::create_terrain}};
+use engine::{HawkEngine, start_engine, ecs::{components::{general::{Transform, Camera, Movement, Wireframe}, physics::{RigidBodyComponent, ColliderComponent, ColliderRenderable}}, resources::{ActiveCamera, physics::PhysicsData}, utils::objects::create_terrain}};
 use nalgebra::Vector3;
 use rapier3d::{control::KinematicCharacterController, prelude::{RigidBodyBuilder, RigidBodyType, ColliderBuilder, SharedShape}};
 use specs::{WorldExt, Builder};
@@ -22,13 +22,19 @@ fn main() {
 
     let rigid_body_component = RigidBodyComponent::new(rigid_body, &mut physics_data, Some(character_controller));
 
+    let collider = ColliderComponent::new(collider, Some(&rigid_body_component.handle), &mut physics_data);
+    let (v, i) = collider.get_vertices(&physics_data);
+    let vert = ColliderRenderable::convert_to_vertex(v);
+    let (vb, ib) = engine.vulkan.create_vertex_buffers(vert, i);
+
     // Add a camera
     let camera_entity = world
         .create_entity()
         .with(Camera)
         .with(Transform::default())
         .with(Movement {speed: 0.1, sensitivity: 0.1, yaw: 0.0, pitch: 0.0, last_x: 0.0, last_y: 0.0})
-        .with(ColliderComponent::new(collider, Some(&rigid_body_component.handle), &mut physics_data))
+        .with(collider)
+        //.with(ColliderRenderable { vertex_buffer: vb, index_buffer: ib })
         .with(rigid_body_component)
         .build();
     world.insert(ActiveCamera(camera_entity));
@@ -44,12 +50,18 @@ fn main() {
         Ok(v) => {
             let terrain_rb_comp = RigidBodyComponent::new(terrain_rigid_body, &mut physics_data, None);
 
+            let collider = ColliderComponent::new(terrain_collider, Some(&terrain_rb_comp.handle), &mut physics_data);
+            let (ve, i) = collider.get_vertices(&physics_data);
+            let vert = ColliderRenderable::convert_to_vertex(ve);
+            let (vb, ib) = engine.vulkan.create_vertex_buffers(vert, i);
+
             let terrain = world
                 .create_entity()
                 .with(v)
                 .with(Transform::default())
-                .with(ColliderComponent::new(terrain_collider, Some(&terrain_rb_comp.handle), &mut physics_data))
+                .with(collider)
                 .with(terrain_rb_comp)
+                .with(ColliderRenderable { vertex_buffer: vb, index_buffer: ib })
                 .build();
             world.insert(terrain);
         },

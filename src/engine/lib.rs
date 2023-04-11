@@ -24,11 +24,13 @@ use ecs::systems::render::Render;
 use graphics::vulkan::Vulkan;
 use log::{info, trace};
 use nalgebra::Perspective3;
-use shaders::vs::ty::VPUniformBufferObject;
+use shaders::default::vs::ty::VPUniformBufferObject;
 use specs::{WorldExt, DispatcherBuilder, Dispatcher};
 use vulkano::buffer::CpuBufferPool;
+use vulkano::pipeline::graphics::rasterization::{RasterizationState, PolygonMode};
 use vulkano::pipeline::{GraphicsPipeline};
 use vulkano::pipeline::graphics::viewport::{Viewport};
+use vulkano::shader;
 use vulkano::swapchain::{Swapchain, SwapchainCreateInfo, Surface, SwapchainCreationError, acquire_next_image, AcquireError, SwapchainPresentInfo};
 use vulkano::sync::{self, GpuFuture, FenceSignalFuture};
 use vulkano::sync::FlushError;
@@ -55,6 +57,7 @@ pub struct HawkEngine<'a> {
     render_pass: Arc<RenderPass>,
     framebuffers: Vec<Arc<Framebuffer>>,
     pipeline: Arc<GraphicsPipeline>,
+    pipeline_wireframe: Arc<GraphicsPipeline>,
     surface: Arc<Surface>,
     swapchain: Arc<Swapchain>,
     images: Vec<Arc<SwapchainImage>>,
@@ -114,12 +117,21 @@ impl<'a> HawkEngine<'a> {
 
         let mut vulkan = Vulkan::new(&device, &queue);
 
+        // Default
+        let vs = shaders::default::vs::load(device.clone()).expect("Failed to load default vs");
+        let fs = shaders::default::fs::load(device.clone()).expect("Failed to load default fs");
+        // Wireframe
+        let vsw = shaders::wireframe::vs::load(device.clone()).expect("Failed to load wireframe vs");
+        let fsw = shaders::wireframe::fs::load(device.clone()).expect("Failed to load wireframe fs");
+
         let (swapchain, images) = vulkan.create_swapchain(&physical, &surface);
         let render_pass = vulkan.create_render_pass(&swapchain);
         let framebuffers= vulkan.create_framebuffers(&render_pass, &images);
-        let pipeline = vulkan.create_pipeline("default", &render_pass, &surface, None);
+        let pipeline = vulkan.create_pipeline("default", &render_pass, &surface, &vs, &fs, None, None);
+        let rasterization_state = RasterizationState { polygon_mode: PolygonMode::Line, ..Default::default() };
+        let pipeline_wireframe = vulkan.create_pipeline("wireframe", &render_pass, &surface, &vsw, &fsw, None, Some(&rasterization_state));
         let ubo_pool = vulkan.create_view_ubo_pool();
-        return Self { device, queue, render_pass, framebuffers, pipeline, surface, swapchain, images, ubo_pool, vulkan, ecs, dispatchers, event_loop };
+        return Self { device, queue, render_pass, framebuffers, pipeline, pipeline_wireframe, surface, swapchain, images, ubo_pool, vulkan, ecs, dispatchers, event_loop };
     }
 
     pub fn add_dispatcher(&mut self, dispatcher: Dispatcher<'a, 'a>) {
@@ -158,6 +170,7 @@ pub fn start_engine(mut engine: HawkEngine<'static>) {
     // Add initial render data
     engine.ecs.world.insert(RenderData {
         pipeline: engine.pipeline.clone(),
+        pipeline_wireframe: engine.pipeline_wireframe.clone(),
         ubo_pool: engine.ubo_pool.clone(),
         command_buffer_allocator: engine.vulkan.command_buffer_allocator.clone(),
         descriptor_set_allocator: engine.vulkan.descriptor_set_allocator.clone(),
@@ -216,14 +229,36 @@ pub fn start_engine(mut engine: HawkEngine<'static>) {
                         depth_range: 0.0..1.0,
                     };
 
+                    // TODO: do not load these again every time
+                    let vs = shaders::default::vs::load(engine.device.clone()).expect("Failed to create vs");
+                    let fs = shaders::default::fs::load(engine.device.clone()).expect("Failed to load fs");
+                    // Wireframe
+                    let vsw = shaders::wireframe::vs::load(engine.device.clone()).expect("Failed to load wireframe vs");
+                    let fsw = shaders::wireframe::fs::load(engine.device.clone()).expect("Failed to load wireframe fs");
                     let new_pipeline = engine.vulkan.create_pipeline(
                         "default", 
                         &engine.render_pass, 
                         &engine.surface, 
-                        Some(&viewport)
+                        &vs,
+                        &fs,
+                        Some(&viewport),
+                        None
                     );
+                    let rasterization_state = RasterizationState { polygon_mode: PolygonMode::Line, ..Default::default() };
+                    let new_pipeline_wireframe = engine.vulkan.create_pipeline(
+                        "wireframe", 
+                        &engine.render_pass, 
+                        &engine.surface, 
+                        &vsw,
+                        &fsw,
+                        Some(&viewport),
+                        Some(&rasterization_state)
+                    );
+
+                    // TODO: shouldn't we update renderdata in ecs here???
                     engine.images = new_images;
                     engine.pipeline = new_pipeline;
+                    engine.pipeline_wireframe = new_pipeline_wireframe;
                     engine.framebuffers = new_framebuffers;
 
                     // Recreate projection matrix
