@@ -148,18 +148,26 @@ impl PlayerInput {
         let forward = rot * Vector3::new(0.0, 0.0, -1.0);
         let right = rot * Vector3::new(1.0, 0.0, 0.0);
 
+        let mut speed = m.speed;
+        if input.held_shift() {
+            speed += m.boost;
+        }
+        else if input.held_control() {
+            speed -= m.slow;
+        }
+
         let mut cum_move = Vector3::new(0.0, 0.0, 0.0);
         if input.key_held(VirtualKeyCode::W) {
-            cum_move += forward * m.speed;
+            cum_move += forward * speed;
         }
         if input.key_held(VirtualKeyCode::S) {
-            cum_move -= forward * m.speed;
+            cum_move -= forward * speed;
         }
         if input.key_held(VirtualKeyCode::A) {
-            cum_move -= right * m.speed;
+            cum_move -= right * speed;
         }
         if input.key_held(VirtualKeyCode::D) {
-            cum_move += right * m.speed;
+            cum_move += right * speed;
         }
         return cum_move;
     }

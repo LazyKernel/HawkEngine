@@ -84,6 +84,8 @@ pub struct Camera;
 #[storage(HashMapStorage)]
 pub struct Movement {
     pub speed: f32,
+    pub boost: f32,
+    pub slow: f32,
     pub sensitivity: f32,
 
     pub yaw: f32,

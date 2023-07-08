@@ -20,6 +20,7 @@ pub fn create_height_field(path: &String, field_width: u32, field_height: u32) -
 
     let mut pixels = vec![0; reader.info().raw_bytes()];
     reader.next_frame(&mut pixels).unwrap();
+    let bpp = reader.info().bytes_per_pixel();
 
     let (fw, fh): (usize, usize) = (field_width.try_into().unwrap(), field_height.try_into().unwrap());
 
@@ -29,9 +30,8 @@ pub fn create_height_field(path: &String, field_width: u32, field_height: u32) -
         let yf: usize = ((i as f64 * scaleh).floor() as u64).try_into().unwrap();
         for j in 0..fh {
             let xf: usize = ((j as f64 * scalew).floor() as u64).try_into().unwrap();
-            // row-wise packed, assuming single channel
-            // TODO: support different formats?
-            let val = pixels[yf * w as usize + xf];
+            // row-wise packed
+            let val = pixels[yf * bpp * w as usize + xf * bpp];
             let scaled_val = val as f32 / 255.0;
             height_field[i][j] = scaled_val * 10.0;
         }
@@ -101,8 +101,8 @@ pub fn create_terrain_vertices(height_field: &Vec<Vec<f32>>) -> (Vec<Vertex>, Ve
     let mut verts = Vec::<Vertex>::with_capacity(h * w);
     let mut indices = Vec::<u32>::with_capacity(h * w);
 
-    let xcenter = w as f64 / 2.0;
-    let ycenter = h as f64 / 2.0;
+    let xcenter = w as f64 / 2.0 - 0.5;
+    let ycenter = h as f64 / 2.0 - 0.5;
 
     for y in 0..h {
         for x in 0..w {

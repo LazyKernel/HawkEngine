@@ -1,7 +1,9 @@
+use std::f32::consts::PI;
+
 use log::error;
 use engine::{HawkEngine, start_engine, ecs::{components::{general::{Transform, Camera, Movement, Wireframe}, physics::{RigidBodyComponent, ColliderComponent, ColliderRenderable}}, resources::{ActiveCamera, physics::PhysicsData}, utils::objects::create_terrain}};
-use nalgebra::Vector3;
-use rapier3d::{control::KinematicCharacterController, prelude::{RigidBodyBuilder, RigidBodyType, ColliderBuilder, SharedShape}};
+use nalgebra::{Vector3, UnitQuaternion, UnitVector3};
+use rapier3d::{control::KinematicCharacterController, prelude::{RigidBodyBuilder, RigidBodyType, ColliderBuilder, SharedShape, UnitVector}};
 use specs::{WorldExt, Builder};
 
 fn main() {
@@ -32,7 +34,7 @@ fn main() {
         .create_entity()
         .with(Camera)
         .with(Transform::default())
-        .with(Movement {speed: 0.1, sensitivity: 0.1, yaw: 0.0, pitch: 0.0, last_x: 0.0, last_y: 0.0})
+        .with(Movement {speed: 0.1, boost: 0.2, slow: 0.075, sensitivity: 0.1, yaw: 0.0, pitch: 0.0, last_x: 0.0, last_y: 0.0})
         .with(collider)
         //.with(ColliderRenderable { vertex_buffer: vb, index_buffer: ib })
         .with(rigid_body_component)
