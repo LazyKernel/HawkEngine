@@ -91,6 +91,7 @@ impl RigidBodyComponent {
                     |_| {}
                 );
         
+                
                 position.append_translation_mut(&corrected_movement.translation.into());
             },
             None => ()

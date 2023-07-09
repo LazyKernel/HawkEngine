@@ -31,7 +31,8 @@ impl PhysicsData {
         &mut ColliderSet,
         &mut ImpulseJointSet,
         &mut MultibodyJointSet,
-        &mut CCDSolver
+        &mut CCDSolver,
+        &mut QueryPipeline
     ) {
         (
             &self.gravity, 
@@ -44,7 +45,8 @@ impl PhysicsData {
             &mut self.collider_set, 
             &mut self.impulse_joint_set,
             &mut self.multibody_joint_set,
-            &mut self.ccd_solver
+            &mut self.ccd_solver,
+            &mut self.query_pipeline
         )
     }
 }

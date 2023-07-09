@@ -86,7 +86,7 @@ impl<'a> HawkEngine<'a> {
         let mut dbuilder = DispatcherBuilder::new();
 
         if use_physics {
-            dbuilder.add(Physics, "physics", &[]);
+            dbuilder.add(Physics::default(), "physics", &[]);
         }
 
         let dispatcher = dbuilder

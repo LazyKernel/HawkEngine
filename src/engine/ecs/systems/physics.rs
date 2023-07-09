@@ -1,10 +1,12 @@
-use rapier3d::prelude::IntegrationParameters;
+use rapier3d::prelude::{IntegrationParameters, EventHandler};
 use specs::{System, Write, Read, ReadStorage, WriteStorage};
 
-use crate::ecs::{resources::{physics::PhysicsData, DeltaTime}, components::{general::Transform, physics::{RigidBodyComponent, ColliderComponent}}};
+use crate::ecs::{resources::{physics::PhysicsData, DeltaTime}, components::{general::Transform, physics::{RigidBodyComponent, ColliderComponent}}, utils::debug::DebugEventHandler};
 
-
-pub struct Physics;
+#[derive(Default)]
+pub struct Physics {
+    debug_event_handler: DebugEventHandler
+}
 
 impl<'a> System<'a> for Physics {
     type SystemData = (
@@ -22,7 +24,8 @@ impl<'a> System<'a> for Physics {
         // Update entities
         for (t, r, c) in (&mut transform, &mut rigid_body, &collider).join() {
             if t.need_physics_update && r.has_character_controller() {
-                r.apply_movement(Some(&t.pos), Some(&t.rot), delta_time.0, c, &mut physics_data);
+                let phys_pos = r.position(&physics_data);
+                r.apply_movement(Some(&t.mov), Some(&phys_pos.rotation), delta_time.0, c, &mut physics_data);
                 t.need_physics_update = false;
             }
         }
@@ -39,12 +42,14 @@ impl<'a> System<'a> for Physics {
             collider_set,
             impulse_joint_set,
             multibody_joint_set,
-            ccd_solver
+            ccd_solver,
+            query_pipeline
         ) = physics_data.split_borrow();
 
         // Using non-fixed time step
         let new_integration_params = IntegrationParameters {
             dt: delta_time.0,
+            
             ..*integration_params
         };
 
@@ -59,17 +64,17 @@ impl<'a> System<'a> for Physics {
             impulse_joint_set,
             multibody_joint_set,
             ccd_solver,
-            None,
+            Some(query_pipeline),
             &(),
-            &()
+            &self.debug_event_handler
         );
 
         // Update transform
         // TODO: fix mismatch
-        // for (t, r) in (&mut transform, &rigid_body).join() {
-        //     let pos = r.position(&physics_data);
-        //     t.pos = pos.translation.vector;
-        //     //t.rot = pos.rotation;
-        // }
+        for (t, r) in (&mut transform, &rigid_body).join() {
+            let pos = r.position(&physics_data);
+            t.pos = pos.translation.vector;
+            //t.rot = pos.rotation;
+        }
     }
 } 
