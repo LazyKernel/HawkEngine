@@ -2,7 +2,6 @@ use nalgebra::Vector3;
 use rapier3d::prelude::{RigidBodySet, ColliderSet, IntegrationParameters, PhysicsPipeline, IslandManager, BroadPhase, NarrowPhase, ImpulseJointSet, MultibodyJointSet, CCDSolver, QueryPipeline};
 
 
-#[derive(Default)]
 pub struct PhysicsData {
     pub rigid_body_set: RigidBodySet,
     pub collider_set: ColliderSet,
@@ -17,6 +16,25 @@ pub struct PhysicsData {
     pub multibody_joint_set: MultibodyJointSet,
     pub ccd_solver: CCDSolver,
     pub query_pipeline: QueryPipeline
+}
+
+impl Default for PhysicsData {
+    fn default() -> Self {
+        Self { 
+            rigid_body_set: Default::default(),
+            collider_set: Default::default(),
+            gravity: Vector3::new(0.0, -9.81, 0.0), 
+            integration_parameters: Default::default(), 
+            physics_pipeline: Default::default(), 
+            island_manager: Default::default(), 
+            broad_phase: Default::default(), 
+            narrow_phase: Default::default(), 
+            impulse_joint_set: Default::default(), 
+            multibody_joint_set: Default::default(), 
+            ccd_solver: Default::default(), 
+            query_pipeline: Default::default() 
+        }
+    }
 }
 
 impl PhysicsData {

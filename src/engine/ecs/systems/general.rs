@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use log::{error, debug};
+use log::{error, debug, warn};
 use nalgebra::{clamp, UnitQuaternion, Vector3};
 use rapier3d::prelude::RigidBody;
 use specs::{System, Read, ReadStorage, WriteStorage, Write};
@@ -15,6 +15,7 @@ pub struct PlayerInput;
 impl<'a> System<'a> for PlayerInput {
     type SystemData = (
         Read<'a, DeltaTime>,
+        Read<'a, PhysicsData>,
         Option<Read<'a, Arc<WinitInputHelper>>>,
         Option<Read<'a, Arc<Surface>>>,
         Write<'a, CursorGrab>,
@@ -23,7 +24,7 @@ impl<'a> System<'a> for PlayerInput {
         WriteStorage<'a, Transform>,
     );
 
-    fn run(&mut self, (delta, input, surface, mut cursor_grabbed, camera, mut movement, mut transform): Self::SystemData) {
+    fn run(&mut self, (delta, physics_data, input, surface, mut cursor_grabbed, camera, mut movement, mut transform): Self::SystemData) {
         use specs::Join;
         // Verify we have all dependencies
         // Abort if not
@@ -102,7 +103,7 @@ impl<'a> System<'a> for PlayerInput {
                 Some(v) => v,
                 None => t.rot
             };
-            t.apply_movement(&self.calculate_movement(&input, &t.rot, m));
+            t.apply_movement(&self.calculate_movement(&input, &t.rot, m, &physics_data.gravity));
         }
     }
 }
@@ -144,7 +145,7 @@ impl PlayerInput {
         }
     }
 
-    fn calculate_movement(&self, input: &Arc<WinitInputHelper>, rot: &UnitQuaternion<f32>, m: &Movement) -> Vector3<f32> {
+    fn calculate_movement(&self, input: &Arc<WinitInputHelper>, rot: &UnitQuaternion<f32>, m: &Movement, gravity: &Vector3<f32>) -> Vector3<f32> {
         let forward = rot * Vector3::new(0.0, 0.0, -1.0);
         let right = rot * Vector3::new(1.0, 0.0, 0.0);
 
@@ -169,6 +170,8 @@ impl PlayerInput {
         if input.key_held(VirtualKeyCode::D) {
             cum_move += right * speed;
         }
-        return cum_move;
+
+        // need to add gravity manually, as per docs
+        return cum_move + gravity;
     }
 }

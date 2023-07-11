@@ -1,3 +1,5 @@
+use log::warn;
+use nalgebra::Vector3;
 use rapier3d::prelude::{IntegrationParameters, EventHandler};
 use specs::{System, Write, Read, ReadStorage, WriteStorage};
 
@@ -26,6 +28,7 @@ impl<'a> System<'a> for Physics {
             if t.need_physics_update && r.has_character_controller() {
                 let phys_pos = r.position(&physics_data);
                 r.apply_movement(Some(&t.mov), Some(&phys_pos.rotation), delta_time.0, c, &mut physics_data);
+                t.mov = Vector3::zeros();
                 t.need_physics_update = false;
             }
         }
@@ -49,7 +52,6 @@ impl<'a> System<'a> for Physics {
         // Using non-fixed time step
         let new_integration_params = IntegrationParameters {
             dt: delta_time.0,
-            
             ..*integration_params
         };
 
@@ -73,8 +75,23 @@ impl<'a> System<'a> for Physics {
         // TODO: fix mismatch
         for (t, r) in (&mut transform, &rigid_body).join() {
             let pos = r.position(&physics_data);
-            t.pos = pos.translation.vector;
-            //t.rot = pos.rotation;
+            
+            match physics_data.rigid_body_set.get(r.handle) {
+                Some(v) => {
+                    if !v.is_translation_locked() {
+                        t.pos = pos.translation.vector;
+                    }
+
+                    // if any degrees of freedom are locked, don't update rotation
+                    // todo: update properly
+                    if !v.is_rotation_locked().iter().any(|x| *x) {
+                        t.rot = pos.rotation;
+                    }
+                },
+                None => {
+                    warn!("Failed to fetch rigid body with handle {:?}. Translation and rotation will not be updated.", r.handle);
+                }
+            }
         }
     }
 } 

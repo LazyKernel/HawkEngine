@@ -16,7 +16,9 @@ pub fn create_terrain(height_map_name: &str, texture_name: &str, vulkan: &Vulkan
     let collider = ColliderBuilder::heightfield(
         DMatrix::from_iterator(128, 128, height_field.into_iter().flatten()).transpose(), 
         Vector3::new(127.0, 1.0, 127.0)
-    ).build();
+    )
+    .friction(0.7)
+    .build();
 
     let rigid_body = RigidBodyBuilder::new(RigidBodyType::Fixed).build();
 

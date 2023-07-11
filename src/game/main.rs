@@ -21,9 +21,11 @@ fn main() {
         .enabled(true)
         .user_data(1)
         .translation(Vector3::new(0.0, 15.0, 0.0))
+        .lock_rotations()
         .build();
-    let collider = ColliderBuilder::new(SharedShape::ball(1.0))
+    let collider = ColliderBuilder::new(SharedShape::capsule_y(1.8, 1.0))
         .active_collision_types(ActiveCollisionTypes::default() | ActiveCollisionTypes::KINEMATIC_FIXED)
+        .friction(0.7)
         .enabled(true)
         .build();
 
@@ -42,7 +44,7 @@ fn main() {
             pos: Vector3::new(0.0, 15.0, 0.0),
             ..Default::default()
         })
-        .with(Movement {speed: 0.01, boost: 0.02, slow: 0.0075, sensitivity: 0.1, yaw: 0.0, pitch: 0.0, last_x: 0.0, last_y: 0.0})
+        .with(Movement {speed: 0.1, boost: 0.2, slow: 0.075, sensitivity: 0.1, yaw: 0.0, pitch: 0.0, last_x: 0.0, last_y: 0.0})
         .with(collider)
         .with(ColliderRenderable { vertex_buffer: vb, index_buffer: ib })
         .with(rigid_body_component)
