@@ -3,6 +3,7 @@ use std::sync::Arc;
 use nalgebra::Matrix4;
 use specs::Entity;
 use vulkano::{command_buffer::{PrimaryAutoCommandBuffer, allocator::StandardCommandBufferAllocator}, pipeline::GraphicsPipeline, render_pass::Framebuffer, buffer::CpuBufferPool, descriptor_set::allocator::StandardDescriptorSetAllocator};
+use winit::window::CursorGrabMode;
 
 use crate::shaders::default::vs::ty::VPUniformBufferObject;
 
@@ -29,8 +30,16 @@ pub struct ProjectionMatrix(pub Matrix4<f32>);
 
 pub struct ActiveCamera(pub Entity);
 
-#[derive(Default)]
-pub struct CursorGrab(pub bool);
+pub struct CursorGrab {
+    pub grabbed: bool,
+    pub mode: CursorGrabMode
+}
+
+impl Default for CursorGrab {
+    fn default() -> Self {
+        CursorGrab { grabbed: false, mode: CursorGrabMode::None }
+    }
+}
 
 #[derive(Default)]
 pub struct DeltaTime(pub f32);

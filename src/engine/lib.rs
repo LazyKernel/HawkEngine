@@ -164,7 +164,7 @@ pub fn start_engine(mut engine: HawkEngine<'static>) {
     // Add initial surface
     engine.ecs.world.insert(engine.surface.clone());
     // Add initial cursor grab
-    engine.ecs.world.insert(CursorGrab { 0: false });
+    engine.ecs.world.insert(CursorGrab::default());
     // Add projection matrix
     engine.ecs.world.insert(ProjectionMatrix(proj));
     // Add initial render data
