@@ -3,7 +3,7 @@ use nalgebra::Vector3;
 use rapier3d::prelude::{IntegrationParameters, EventHandler};
 use specs::{System, Write, Read, ReadStorage, WriteStorage};
 
-use crate::ecs::{resources::{physics::PhysicsData, DeltaTime}, components::{general::Transform, physics::{RigidBodyComponent, ColliderComponent}}, utils::debug::DebugEventHandler};
+use crate::ecs::{resources::{physics::PhysicsData, DeltaTime}, components::{general::{Transform, Movement}, physics::{RigidBodyComponent, ColliderComponent}}, utils::debug::DebugEventHandler};
 
 #[derive(Default)]
 pub struct Physics {
@@ -17,19 +17,27 @@ impl<'a> System<'a> for Physics {
 
         WriteStorage<'a, Transform>,
         WriteStorage<'a, RigidBodyComponent>,
-        ReadStorage<'a, ColliderComponent>
+        ReadStorage<'a, ColliderComponent>,
+        ReadStorage<'a, Movement>
     );
 
-    fn run(&mut self, (mut physics_data, delta_time, mut transform, mut rigid_body, collider): Self::SystemData) {
+    fn run(&mut self, (mut physics_data, delta_time, mut transform, mut rigid_body, collider, movement): Self::SystemData) {
         use specs::Join;
 
         // Update entities
-        for (t, r, c) in (&mut transform, &mut rigid_body, &collider).join() {
+        for (t, r, c, m) in (&mut transform, &mut rigid_body, &collider, &movement).join() {
             if t.need_physics_update && r.has_character_controller() {
-                let phys_pos = r.position(&physics_data);
-                r.apply_movement(Some(&t.mov), Some(&phys_pos.rotation), delta_time.0, c, &mut physics_data);
-                t.mov = Vector3::zeros();
-                t.need_physics_update = false;
+                if t.mov.norm() > m.max_vel {
+                    t.mov -= t.mov.normalize() * (t.mov.norm() - m.max_vel);
+                }
+
+                r.apply_movement(&t.mov, delta_time.0, c, &mut physics_data);
+                //t.mov -= t.mov.normalize() * m.deceleration;
+
+                if t.mov.norm() < 0.1 {
+                    t.need_physics_update = false;
+                    t.mov = Vector3::zeros();
+                }
             }
         }
 

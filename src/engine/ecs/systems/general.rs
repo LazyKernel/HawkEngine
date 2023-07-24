@@ -149,7 +149,7 @@ impl PlayerInput {
         let forward = rot * Vector3::new(0.0, 0.0, -1.0);
         let right = rot * Vector3::new(1.0, 0.0, 0.0);
 
-        let mut speed = m.speed;
+        let mut speed = m.acceleration;
         if input.held_shift() {
             speed += m.boost;
         }
@@ -169,6 +169,11 @@ impl PlayerInput {
         }
         if input.key_held(VirtualKeyCode::D) {
             cum_move += right * speed;
+        }
+
+        // TODO: dont allow jumping without being on the ground
+        if input.key_pressed(VirtualKeyCode::Space) {
+            cum_move += Vector3::y() * m.jump_vel;
         }
 
         // need to add gravity manually, as per docs

@@ -84,9 +84,13 @@ pub struct Camera;
 #[derive(Component, Debug)]
 #[storage(HashMapStorage)]
 pub struct Movement {
-    pub speed: f32,
+    pub acceleration: f32,
+    pub deceleration: f32,
+    pub max_vel: f32,
+    pub jump_vel: f32,
     pub boost: f32,
     pub slow: f32,
+
     pub sensitivity: f32,
 
     pub yaw: f32,

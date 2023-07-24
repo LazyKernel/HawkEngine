@@ -19,7 +19,7 @@ fn main() {
         snap_to_ground: Some(CharacterLength::Relative(0.025)),
         ..Default::default()
     };
-    let rigid_body = RigidBodyBuilder::new(RigidBodyType::KinematicPositionBased)
+    let rigid_body = RigidBodyBuilder::new(RigidBodyType::KinematicVelocityBased)
         //.ccd_enabled(true)
         .can_sleep(false)
         .enabled(true)
@@ -49,7 +49,7 @@ fn main() {
             pos: Vector3::new(0.0, 15.0, 0.0),
             ..Default::default()
         })
-        .with(Movement {speed: 10.0, boost: 20.0, slow: 5.0, sensitivity: 0.1, yaw: 0.0, pitch: 0.0, last_x: 0.0, last_y: 0.0})
+        .with(Movement {acceleration: 10.0, deceleration: 20.0, max_vel: 250.0, jump_vel: 100.0, boost: 20.0, slow: 5.0, sensitivity: 0.1, yaw: 0.0, pitch: 0.0, last_x: 0.0, last_y: 0.0})
         .with(collider)
         .with(ColliderRenderable { vertex_buffer: vb, index_buffer: ib })
         .with(rigid_body_component)
