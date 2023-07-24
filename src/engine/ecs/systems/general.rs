@@ -103,7 +103,7 @@ impl<'a> System<'a> for PlayerInput {
                 Some(v) => v,
                 None => t.rot
             };
-            t.apply_movement(&self.calculate_movement(&input, &t.rot, m, &physics_data.gravity));
+            t.apply_movement(&self.calculate_movement(&input, &t.rot, m, &physics_data.gravity, delta.0));
         }
     }
 }
@@ -145,7 +145,7 @@ impl PlayerInput {
         }
     }
 
-    fn calculate_movement(&self, input: &Arc<WinitInputHelper>, rot: &UnitQuaternion<f32>, m: &Movement, gravity: &Vector3<f32>) -> Vector3<f32> {
+    fn calculate_movement(&self, input: &Arc<WinitInputHelper>, rot: &UnitQuaternion<f32>, m: &Movement, gravity: &Vector3<f32>, delta: f32) -> Vector3<f32> {
         let forward = rot * Vector3::new(0.0, 0.0, -1.0);
         let right = rot * Vector3::new(1.0, 0.0, 0.0);
 
@@ -172,6 +172,6 @@ impl PlayerInput {
         }
 
         // need to add gravity manually, as per docs
-        return cum_move + gravity;
+        return (cum_move * delta) + (gravity * delta * 10.0);
     }
 }

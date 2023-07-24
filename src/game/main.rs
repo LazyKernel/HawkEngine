@@ -3,7 +3,7 @@ use std::f32::consts::PI;
 use log::error;
 use engine::{HawkEngine, start_engine, ecs::{components::{general::{Transform, Camera, Movement, Wireframe}, physics::{RigidBodyComponent, ColliderComponent, ColliderRenderable}}, resources::{ActiveCamera, physics::PhysicsData}, utils::objects::create_terrain}};
 use nalgebra::{Vector3, UnitQuaternion, UnitVector3};
-use rapier3d::{control::KinematicCharacterController, prelude::{RigidBodyBuilder, RigidBodyType, ColliderBuilder, SharedShape, UnitVector, ActiveCollisionTypes}};
+use rapier3d::{control::{KinematicCharacterController, CharacterLength}, prelude::{RigidBodyBuilder, RigidBodyType, ColliderBuilder, SharedShape, UnitVector, ActiveCollisionTypes}};
 use specs::{WorldExt, Builder};
 
 fn main() {
@@ -14,18 +14,23 @@ fn main() {
     // Add physics stuff
     let mut physics_data = PhysicsData::default();
 
-    let character_controller = KinematicCharacterController::default();
+    let character_controller = KinematicCharacterController {
+        offset: CharacterLength::Relative(0.1),
+        snap_to_ground: Some(CharacterLength::Relative(0.025)),
+        ..Default::default()
+    };
     let rigid_body = RigidBodyBuilder::new(RigidBodyType::KinematicPositionBased)
-        .ccd_enabled(true)
+        //.ccd_enabled(true)
         .can_sleep(false)
         .enabled(true)
         .user_data(1)
         .translation(Vector3::new(0.0, 15.0, 0.0))
         .lock_rotations()
         .build();
-    let collider = ColliderBuilder::new(SharedShape::capsule_y(1.8, 1.0))
-        .active_collision_types(ActiveCollisionTypes::default() | ActiveCollisionTypes::KINEMATIC_FIXED)
-        .friction(0.7)
+    let collider = ColliderBuilder::new(SharedShape::capsule_y(0.9, 1.0))
+        //.active_collision_types(ActiveCollisionTypes::default() | ActiveCollisionTypes::KINEMATIC_FIXED)
+        //.friction(0.7)
+        //.mass(80.0)
         .enabled(true)
         .build();
 
@@ -44,7 +49,7 @@ fn main() {
             pos: Vector3::new(0.0, 15.0, 0.0),
             ..Default::default()
         })
-        .with(Movement {speed: 0.1, boost: 0.2, slow: 0.075, sensitivity: 0.1, yaw: 0.0, pitch: 0.0, last_x: 0.0, last_y: 0.0})
+        .with(Movement {speed: 10.0, boost: 20.0, slow: 5.0, sensitivity: 0.1, yaw: 0.0, pitch: 0.0, last_x: 0.0, last_y: 0.0})
         .with(collider)
         .with(ColliderRenderable { vertex_buffer: vb, index_buffer: ib })
         .with(rigid_body_component)
