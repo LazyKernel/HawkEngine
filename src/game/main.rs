@@ -49,7 +49,7 @@ fn main() {
             pos: Vector3::new(0.0, 15.0, 0.0),
             ..Default::default()
         })
-        .with(Movement {speed: 10.0, boost: 20.0, slow: 5.0, sensitivity: 0.1, yaw: 0.0, pitch: 0.0, last_x: 0.0, last_y: 0.0})
+        .with(Movement {speed: 10.0, boost: 20.0, slow: 5.0, jump: 2000.0, sensitivity: 0.1, yaw: 0.0, pitch: 0.0, last_x: 0.0, last_y: 0.0})
         .with(collider)
         .with(ColliderRenderable { vertex_buffer: vb, index_buffer: ib })
         .with(rigid_body_component)

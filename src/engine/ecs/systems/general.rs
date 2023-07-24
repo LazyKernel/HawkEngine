@@ -171,7 +171,11 @@ impl PlayerInput {
             cum_move += right * speed;
         }
 
+        if input.key_pressed(VirtualKeyCode::Space) {
+            cum_move += Vector3::y() * m.jump;
+        }
+
         // need to add gravity manually, as per docs
-        return (cum_move * delta) + (gravity * delta * 10.0);
+        return (cum_move * delta) + (gravity * delta * 5.0);
     }
 }
