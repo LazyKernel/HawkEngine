@@ -27,16 +27,28 @@ impl<'a> System<'a> for Physics {
         // Update entities
         for (t, r, c, m) in (&mut transform, &mut rigid_body, &collider, &movement).join() {
             if t.need_physics_update && r.has_character_controller() {
-                if t.mov.norm() > m.max_vel {
-                    t.mov -= t.mov.normalize() * (t.mov.norm() - m.max_vel);
-                }
+                match physics_data.rigid_body_set.get(r.handle) {
+                    Some(v) => {
+                        let mut total_vel = t.mov + v.linvel();
+                        let mut total_vel_xz = total_vel.xz();
+                        let total_vel_y = total_vel.y;
+                        if total_vel_xz.norm() > m.max_vel {
+                            total_vel_xz -= total_vel_xz.normalize() * (total_vel_xz.norm() - m.max_vel);
+                        }
 
-                r.apply_movement(&t.mov, delta_time.0, c, &mut physics_data);
-                //t.mov -= t.mov.normalize() * m.deceleration;
-
-                if t.mov.norm() < 0.1 {
-                    t.need_physics_update = false;
-                    t.mov = Vector3::zeros();
+                        total_vel = Vector3::new(total_vel_xz.x, total_vel_y, total_vel_xz.y);
+        
+                        r.apply_movement(&total_vel, delta_time.0, c, &mut physics_data);
+                        //t.mov -= t.mov.normalize() * m.deceleration;
+        
+                        if t.mov.norm() < 0.1 {
+                            t.need_physics_update = false;
+                            t.mov = Vector3::zeros();
+                        }
+                    },
+                    None => {
+                        warn!("Failed to fetch rigid body with handle {:?}. Movement will not be updated.", r.handle);
+                    }
                 }
             }
         }
