@@ -177,6 +177,6 @@ impl PlayerInput {
         }
 
         // need to add gravity manually, as per docs
-        return (cum_move * delta) + (gravity * delta * 1000.0);
+        return (cum_move * delta) + (gravity * delta);
     }
 }

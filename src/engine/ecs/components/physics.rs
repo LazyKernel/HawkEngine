@@ -90,7 +90,7 @@ impl RigidBodyComponent {
         );
         
         match physics_data.rigid_body_set.get_mut(self.handle) {
-            Some(v) => v.set_linvel(corrected_movement.translation.into(), true),
+            Some(v) => v.set_linvel((corrected_movement.translation / dt).into(), true),
             None => error!("Was unable to get rigid body with handle {:?}", self.handle)
         }
     }

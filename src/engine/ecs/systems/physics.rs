@@ -38,6 +38,8 @@ impl<'a> System<'a> for Physics {
 
                         total_vel = Vector3::new(total_vel_xz.x, total_vel_y, total_vel_xz.y);
         
+                        println!("{:?}", total_vel);
+
                         r.apply_movement(&total_vel, delta_time.0, c, &mut physics_data);
                         //t.mov -= t.mov.normalize() * m.deceleration;
         
