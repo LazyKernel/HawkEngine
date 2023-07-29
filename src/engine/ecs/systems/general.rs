@@ -176,7 +176,6 @@ impl PlayerInput {
             cum_move += Vector3::y() * m.jump_vel;
         }
 
-        // need to add gravity manually, as per docs
-        return (cum_move * delta) + (gravity * delta);
+        return cum_move * delta;
     }
 }

@@ -38,11 +38,23 @@ impl<'a> System<'a> for Physics {
 
                         total_vel = Vector3::new(total_vel_xz.x, total_vel_y, total_vel_xz.y);
         
+                        // need to add gravity manually as per docs
+                        total_vel += physics_data.gravity * delta_time.0 * 2.0;
+
                         println!("{:?}", total_vel);
 
                         r.apply_movement(&total_vel, delta_time.0, c, &mut physics_data);
                         //t.mov -= t.mov.normalize() * m.deceleration;
-        
+
+                        t.mov.y += physics_data.gravity.y * delta_time.0 * 2.0;
+
+                        if t.mov.y <= 0.1 {
+                            t.mov.y = 0.0;
+                        }
+
+                        t.mov.x = 0.0;
+                        t.mov.z = 0.0;
+
                         if t.mov.norm() < 0.1 {
                             t.need_physics_update = false;
                             t.mov = Vector3::zeros();

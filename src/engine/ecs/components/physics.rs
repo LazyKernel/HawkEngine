@@ -84,7 +84,7 @@ impl RigidBodyComponent {
             &physics_data.query_pipeline, 
             collider.shape(), 
             &position, 
-            *movement, 
+            *movement * dt, 
             QueryFilter::default().exclude_rigid_body(self.handle), 
             |_| {}
         );
