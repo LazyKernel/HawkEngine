@@ -103,6 +103,12 @@ impl<'a> System<'a> for PlayerInput {
                 Some(v) => v,
                 None => t.rot
             };
+
+            if input.key_pressed(VirtualKeyCode::Space) {
+                let jump_vel = Vector3::y() * m.jump * delta.0;
+                t.apply_velocity(&jump_vel);
+            }
+
             t.apply_movement(&self.calculate_movement(&input, &t.rot, m, &physics_data.gravity, delta.0));
         }
     }
@@ -169,10 +175,6 @@ impl PlayerInput {
         }
         if input.key_held(VirtualKeyCode::D) {
             cum_move += right * speed;
-        }
-
-        if input.key_pressed(VirtualKeyCode::Space) {
-            cum_move += Vector3::y() * m.jump;
         }
 
         // need to add gravity manually, as per docs

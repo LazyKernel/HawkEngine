@@ -21,6 +21,7 @@ pub struct Transform {
 
     pub pos: Vector3<f32>,
     pub mov: Vector3<f32>,
+    pub vel: Vector3<f32>,
     pub rot: UnitQuaternion<f32>,
     pub scale: Vector3<f32>,
 
@@ -52,6 +53,11 @@ impl Transform {
         self.mov += movement;
         self.need_physics_update = true;
     }
+
+    pub fn apply_velocity(&mut self, vel: &Vector3<f32>) {
+        self.vel += vel;
+        self.need_physics_update = true;
+    }
 }
 
 impl Default for Transform {
@@ -59,7 +65,7 @@ impl Default for Transform {
         let default_vec = Vector3::default();
         let default_quat = UnitQuaternion::identity();
         let default_scale = Vector3::new(1.0, 1.0, 1.0);
-        Transform { pos: default_vec, mov: default_vec, rot: default_quat, scale: default_scale, need_physics_update: true }
+        Transform { pos: default_vec, mov: default_vec, vel: default_vec, rot: default_quat, scale: default_scale, need_physics_update: true }
     }
 }
 

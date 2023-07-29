@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, ops::Mul};
 
 use log::{error, warn};
 use nalgebra::{Matrix4, Vector3, Quaternion, Isometry, UnitQuaternion, Point3};
@@ -64,7 +64,7 @@ impl RigidBodyComponent {
     /*
     Applies movement if this component has a KinematicCharacterController
     */
-    pub fn apply_movement(&self, movement: Option<&Vector3<f32>>, rotation: Option<&UnitQuaternion<Real>>, dt: f32, collider: &ColliderComponent, physics_data: &mut PhysicsData) {
+    pub fn apply_movement(&self, movement: Option<&Vector3<f32>>, rotation: Option<&UnitQuaternion<Real>>, velocity: Option<&Vector3<f32>>, dt: f32, collider: &ColliderComponent, physics_data: &mut PhysicsData) {
         let cc = match self.ccontrol {
             Some(v) => v,
             None => return error!("Tried to apply movement to a RigidBodyComponent which has no KinematicCharacterController")
@@ -79,6 +79,13 @@ impl RigidBodyComponent {
 
         match movement {
             Some(v) => {
+                let desired_translation = match velocity {
+                    Some(j) => v + j * dt,
+                    None => *v
+                };
+
+                println!("{:?}: {:?}", velocity.unwrap_or(&Vector3::default()), desired_translation);
+
                 let corrected_movement = cc.move_shape(
                     dt, 
                     &physics_data.rigid_body_set, 
@@ -86,7 +93,7 @@ impl RigidBodyComponent {
                     &physics_data.query_pipeline, 
                     collider.shape(), 
                     &position, 
-                    *v, 
+                    desired_translation, 
                     QueryFilter::default().exclude_rigid_body(self.handle), 
                     |_| {}
                 );

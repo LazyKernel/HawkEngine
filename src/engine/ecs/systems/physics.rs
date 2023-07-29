@@ -27,9 +27,13 @@ impl<'a> System<'a> for Physics {
         for (t, r, c) in (&mut transform, &mut rigid_body, &collider).join() {
             if t.need_physics_update && r.has_character_controller() {
                 let phys_pos = r.position(&physics_data);
-                r.apply_movement(Some(&t.mov), Some(&phys_pos.rotation), delta_time.0, c, &mut physics_data);
+                r.apply_movement(Some(&t.mov), Some(&phys_pos.rotation), Some(&t.vel), delta_time.0, c, &mut physics_data);
                 t.mov = Vector3::zeros();
-                t.need_physics_update = false;
+                t.vel += physics_data.gravity * delta_time.0;
+
+                if t.vel.norm() <= 0.01 {
+                    t.need_physics_update = false;
+                }
             }
         }
 
