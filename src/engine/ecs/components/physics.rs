@@ -63,16 +63,24 @@ impl RigidBodyComponent {
 
     /*
     Applies movement if this component has a KinematicCharacterController
+
+    Returns true if the character was grounded after movement
     */
-    pub fn apply_movement(&self, movement: &Vector3<f32>, dt: f32, collider: &ColliderComponent, physics_data: &mut PhysicsData) {
+    pub fn apply_movement(&self, movement: &Vector3<f32>, dt: f32, collider: &ColliderComponent, physics_data: &mut PhysicsData) -> Option<bool> {
         let cc = match self.ccontrol {
             Some(v) => v,
-            None => return error!("Tried to apply movement to a RigidBodyComponent which has no KinematicCharacterController")
+            None => {
+                error!("Tried to apply movement to a RigidBodyComponent which has no KinematicCharacterController");
+                return None;
+            }
         };
 
         let collider = match physics_data.collider_set.get(collider.handle) {
             Some(v) => v,
-            None => return error!("Could not find collider with handle {:?}", collider.handle)
+            None => {
+                error!("Could not find collider with handle {:?}", collider.handle);
+                return None;
+            } 
         };
 
         let position = self.position(physics_data);
@@ -93,6 +101,8 @@ impl RigidBodyComponent {
             Some(v) => v.set_linvel((corrected_movement.translation / dt).into(), true),
             None => error!("Was unable to get rigid body with handle {:?}", self.handle)
         }
+
+        Some(corrected_movement.grounded)
     }
 }
 

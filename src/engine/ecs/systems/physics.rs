@@ -32,18 +32,18 @@ impl<'a> System<'a> for Physics {
                         let mut total_vel = t.mov + v.linvel();
                         let mut total_vel_xz = total_vel.xz();
                         let total_vel_y = total_vel.y;
-                        if total_vel_xz.norm() > m.max_vel {
-                            total_vel_xz -= total_vel_xz.normalize() * (total_vel_xz.norm() - m.max_vel);
+                        if total_vel.norm() > m.max_vel {
+                            total_vel -= total_vel.normalize() * (total_vel.norm() - m.max_vel);
                         }
 
-                        total_vel = Vector3::new(total_vel_xz.x, total_vel_y, total_vel_xz.y);
+                        //total_vel = Vector3::new(total_vel_xz.x, total_vel_y, total_vel_xz.y);
         
                         // need to add gravity manually as per docs
                         total_vel += physics_data.gravity * delta_time.0 * 2.0;
 
                         println!("{:?}", total_vel);
 
-                        r.apply_movement(&total_vel, delta_time.0, c, &mut physics_data);
+                        let grounded = r.apply_movement(&total_vel, delta_time.0, c, &mut physics_data);
                         //t.mov -= t.mov.normalize() * m.deceleration;
 
                         t.mov.y += physics_data.gravity.y * delta_time.0 * 2.0;

@@ -3,7 +3,7 @@ use std::f32::consts::PI;
 use log::error;
 use engine::{HawkEngine, start_engine, ecs::{components::{general::{Transform, Camera, Movement, Wireframe}, physics::{RigidBodyComponent, ColliderComponent, ColliderRenderable}}, resources::{ActiveCamera, physics::PhysicsData}, utils::objects::create_terrain}};
 use nalgebra::{Vector3, UnitQuaternion, UnitVector3};
-use rapier3d::{control::{KinematicCharacterController, CharacterLength}, prelude::{RigidBodyBuilder, RigidBodyType, ColliderBuilder, SharedShape, UnitVector, ActiveCollisionTypes}};
+use rapier3d::{control::{KinematicCharacterController, CharacterLength}, prelude::{RigidBodyBuilder, RigidBodyType, ColliderBuilder, SharedShape, UnitVector, ActiveCollisionTypes, CoefficientCombineRule}};
 use specs::{WorldExt, Builder};
 
 fn main() {
@@ -29,8 +29,10 @@ fn main() {
         .build();
     let collider = ColliderBuilder::new(SharedShape::capsule_y(0.9, 1.0))
         //.active_collision_types(ActiveCollisionTypes::default() | ActiveCollisionTypes::KINEMATIC_FIXED)
-        //.friction(0.7)
-        //.mass(80.0)
+        .friction(0.7)
+        .mass(80.0)
+        .restitution(0.0)
+        .restitution_combine_rule(CoefficientCombineRule::Multiply)
         .enabled(true)
         .build();
 
