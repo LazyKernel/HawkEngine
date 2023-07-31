@@ -30,7 +30,7 @@ impl<'a> System<'a> for Physics {
                 let grounded = r.apply_movement(&t.mov, &t.vel, &t.accel, Some(&phys_pos.rotation), delta_time.0, c, &mut physics_data);
                 t.mov = Vector3::zeros();
                 t.vel += physics_data.gravity * delta_time.0;
-                t.accel += physics_data.gravity * 2.0;
+                t.accel += physics_data.gravity * 5.0;
 
                 if t.vel.norm().abs() <= 0.1 {
                     t.vel = Vector3::zeros();
