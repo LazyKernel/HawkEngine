@@ -64,45 +64,42 @@ impl RigidBodyComponent {
     /*
     Applies movement if this component has a KinematicCharacterController
     */
-    pub fn apply_movement(&self, movement: Option<&Vector3<f32>>, rotation: Option<&UnitQuaternion<Real>>, velocity: Option<&Vector3<f32>>, dt: f32, collider: &ColliderComponent, physics_data: &mut PhysicsData) {
+    pub fn apply_movement(&self, movement: &Vector3<f32>, velocity: &Vector3<f32>, acceleration: &Vector3<f32>, rotation: Option<&UnitQuaternion<Real>>, dt: f32, collider: &ColliderComponent, physics_data: &mut PhysicsData) -> Option<bool> {
         let cc = match self.ccontrol {
             Some(v) => v,
-            None => return error!("Tried to apply movement to a RigidBodyComponent which has no KinematicCharacterController")
+            None => {
+                error!("Tried to apply movement to a RigidBodyComponent which has no KinematicCharacterController");
+                return None;
+            }
         };
 
         let collider = match physics_data.collider_set.get(collider.handle) {
             Some(v) => v,
-            None => return error!("Could not find collider with handle {:?}", collider.handle)
+            None => {
+                error!("Could not find collider with handle {:?}", collider.handle);
+                return None;
+            }
         };
 
         let mut position = self.position(physics_data);
+        let accel_gravity = acceleration + physics_data.gravity * 2.0;
+        let desired_translation = movement + velocity * dt + 0.5 * accel_gravity * dt * dt;
 
-        match movement {
-            Some(v) => {
-                let desired_translation = match velocity {
-                    Some(j) => v + j * dt,
-                    None => *v
-                };
+        println!("{:?}: {:?}", velocity, desired_translation);
 
-                println!("{:?}: {:?}", velocity.unwrap_or(&Vector3::default()), desired_translation);
-
-                let corrected_movement = cc.move_shape(
-                    dt, 
-                    &physics_data.rigid_body_set, 
-                    &physics_data.collider_set,
-                    &physics_data.query_pipeline, 
-                    collider.shape(), 
-                    &position, 
-                    desired_translation, 
-                    QueryFilter::default().exclude_rigid_body(self.handle), 
-                    |_| {}
-                );
+        let corrected_movement = cc.move_shape(
+            dt, 
+            &physics_data.rigid_body_set, 
+            &physics_data.collider_set,
+            &physics_data.query_pipeline, 
+            collider.shape(), 
+            &position, 
+            desired_translation, 
+            QueryFilter::default().exclude_rigid_body(self.handle), 
+            |_| {}
+        );
         
-                
-                position.append_translation_mut(&corrected_movement.translation.into());
-            },
-            None => ()
-        }
+        position.append_translation_mut(&corrected_movement.translation.into());
 
         match rotation {
             Some(v) => position.append_rotation_wrt_center_mut(v),
@@ -113,6 +110,8 @@ impl RigidBodyComponent {
             Some(v) => v.set_next_kinematic_position(position),
             None => error!("Was unable to get rigid body with handle {:?}", self.handle)
         }
+
+        return Some(corrected_movement.grounded);
     }
 }
 

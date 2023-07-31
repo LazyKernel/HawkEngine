@@ -15,7 +15,6 @@ pub struct PlayerInput;
 impl<'a> System<'a> for PlayerInput {
     type SystemData = (
         Read<'a, DeltaTime>,
-        Read<'a, PhysicsData>,
         Option<Read<'a, Arc<WinitInputHelper>>>,
         Option<Read<'a, Arc<Surface>>>,
         Write<'a, CursorGrab>,
@@ -24,7 +23,7 @@ impl<'a> System<'a> for PlayerInput {
         WriteStorage<'a, Transform>,
     );
 
-    fn run(&mut self, (delta, physics_data, input, surface, mut cursor_grabbed, camera, mut movement, mut transform): Self::SystemData) {
+    fn run(&mut self, (delta, input, surface, mut cursor_grabbed, camera, mut movement, mut transform): Self::SystemData) {
         use specs::Join;
         // Verify we have all dependencies
         // Abort if not
@@ -105,11 +104,11 @@ impl<'a> System<'a> for PlayerInput {
             };
 
             if input.key_pressed(VirtualKeyCode::Space) {
-                let jump_vel = Vector3::y() * m.jump * delta.0;
-                t.apply_velocity(&jump_vel);
+                let jump_accel = Vector3::y() * m.jump;
+                t.apply_acceleration(&jump_accel);
             }
 
-            t.apply_movement(&self.calculate_movement(&input, &t.rot, m, &physics_data.gravity, delta.0));
+            t.apply_movement(&self.calculate_movement(&input, &t.rot, m, delta.0));
         }
     }
 }
@@ -151,7 +150,7 @@ impl PlayerInput {
         }
     }
 
-    fn calculate_movement(&self, input: &Arc<WinitInputHelper>, rot: &UnitQuaternion<f32>, m: &Movement, gravity: &Vector3<f32>, delta: f32) -> Vector3<f32> {
+    fn calculate_movement(&self, input: &Arc<WinitInputHelper>, rot: &UnitQuaternion<f32>, m: &Movement, delta: f32) -> Vector3<f32> {
         let forward = rot * Vector3::new(0.0, 0.0, -1.0);
         let right = rot * Vector3::new(1.0, 0.0, 0.0);
 
@@ -177,7 +176,6 @@ impl PlayerInput {
             cum_move += right * speed;
         }
 
-        // need to add gravity manually, as per docs
-        return (cum_move * delta) + (gravity * delta * 5.0);
+        return cum_move * delta;
     }
 }

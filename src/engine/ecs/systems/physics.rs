@@ -1,5 +1,5 @@
 use log::warn;
-use nalgebra::Vector3;
+use nalgebra::{Vector3, ComplexField};
 use rapier3d::prelude::{IntegrationParameters, EventHandler};
 use specs::{System, Write, Read, ReadStorage, WriteStorage};
 
@@ -27,12 +27,26 @@ impl<'a> System<'a> for Physics {
         for (t, r, c) in (&mut transform, &mut rigid_body, &collider).join() {
             if t.need_physics_update && r.has_character_controller() {
                 let phys_pos = r.position(&physics_data);
-                r.apply_movement(Some(&t.mov), Some(&phys_pos.rotation), Some(&t.vel), delta_time.0, c, &mut physics_data);
+                let grounded = r.apply_movement(&t.mov, &t.vel, &t.accel, Some(&phys_pos.rotation), delta_time.0, c, &mut physics_data);
                 t.mov = Vector3::zeros();
                 t.vel += physics_data.gravity * delta_time.0;
+                t.accel += physics_data.gravity * 2.0;
 
-                if t.vel.norm() <= 0.01 {
-                    t.need_physics_update = false;
+                if t.vel.norm().abs() <= 0.1 {
+                    t.vel = Vector3::zeros();
+                }
+
+                if t.accel.norm().abs() <= 0.1 {
+                    t.accel = Vector3::zeros();
+                }
+
+                if grounded.unwrap_or(false) {
+                    if t.vel.y <= 0.1 {
+                        t.vel.y = 0.0;
+                    }
+                    if t.accel.y <= 0.1 {
+                        t.accel.y = 0.0;
+                    }
                 }
             }
         }

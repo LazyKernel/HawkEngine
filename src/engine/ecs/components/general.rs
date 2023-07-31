@@ -20,10 +20,12 @@ pub struct Transform {
     // on every render
 
     pub pos: Vector3<f32>,
-    pub mov: Vector3<f32>,
-    pub vel: Vector3<f32>,
     pub rot: UnitQuaternion<f32>,
     pub scale: Vector3<f32>,
+
+    pub mov: Vector3<f32>,
+    pub vel: Vector3<f32>,
+    pub accel: Vector3<f32>,
 
     pub need_physics_update: bool
 }
@@ -58,6 +60,11 @@ impl Transform {
         self.vel += vel;
         self.need_physics_update = true;
     }
+
+    pub fn apply_acceleration(&mut self, accel: &Vector3<f32>) {
+        self.accel += accel;
+        self.need_physics_update = true;
+    }
 }
 
 impl Default for Transform {
@@ -65,7 +72,7 @@ impl Default for Transform {
         let default_vec = Vector3::default();
         let default_quat = UnitQuaternion::identity();
         let default_scale = Vector3::new(1.0, 1.0, 1.0);
-        Transform { pos: default_vec, mov: default_vec, vel: default_vec, rot: default_quat, scale: default_scale, need_physics_update: true }
+        Transform { pos: default_vec, mov: default_vec, vel: default_vec, accel: default_vec, rot: default_quat, scale: default_scale, need_physics_update: true }
     }
 }
 
