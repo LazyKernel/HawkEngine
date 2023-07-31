@@ -19,11 +19,12 @@ impl<'a> System<'a> for PlayerInput {
         Option<Read<'a, Arc<Surface>>>,
         Write<'a, CursorGrab>,
         ReadStorage<'a, Camera>,
+        ReadStorage<'a, RigidBodyComponent>,
         WriteStorage<'a, Movement>,
         WriteStorage<'a, Transform>,
     );
 
-    fn run(&mut self, (delta, input, surface, mut cursor_grabbed, camera, mut movement, mut transform): Self::SystemData) {
+    fn run(&mut self, (delta, input, surface, mut cursor_grabbed, camera, rigid_body, mut movement, mut transform): Self::SystemData) {
         use specs::Join;
         // Verify we have all dependencies
         // Abort if not
@@ -97,15 +98,21 @@ impl<'a> System<'a> for PlayerInput {
             None => (0.0, 0.0)
         };
 
-        for (_, m, t) in (&camera, &mut movement, &mut transform).join() {
+        for (_, r, m, t) in (&camera, &rigid_body, &mut movement, &mut transform).join() {
+            if !r.has_character_controller() {
+                error!("Entity has movement but rigid body component does not have a character controller. Movement will not be applied!");
+                continue;
+            }
+
             t.rot = match self.calculate_rotation(x, y, last_x, last_y, m) {
                 Some(v) => v,
                 None => t.rot
             };
 
-            if input.key_pressed(VirtualKeyCode::Space) {
+            if m.can_jump(r.grounded) && input.key_pressed(VirtualKeyCode::Space) {
                 let jump_accel = Vector3::y() * m.jump;
                 t.apply_acceleration(&jump_accel);
+                m.consume_jump(r.grounded)
             }
 
             t.apply_movement(&self.calculate_movement(&input, &t.rot, m, delta.0));

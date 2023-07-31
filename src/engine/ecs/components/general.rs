@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use log::warn;
 use nalgebra::{Matrix4, Vector3, UnitQuaternion};
 use specs::{Component, VecStorage, HashMapStorage, NullStorage};
 use vulkano::{buffer::CpuAccessibleBuffer, descriptor_set::PersistentDescriptorSet};
@@ -94,7 +95,7 @@ pub struct Wireframe;
 #[storage(HashMapStorage)]
 pub struct Camera;
 
-#[derive(Component, Debug)]
+#[derive(Component, Debug, Default)]
 #[storage(HashMapStorage)]
 pub struct Movement {
     pub speed: f32,
@@ -107,5 +108,40 @@ pub struct Movement {
     pub pitch: f32,
 
     pub last_x: f32,
-    pub last_y: f32
+    pub last_y: f32,
+
+    // number of consecutive jumps allowed
+    // e.g. 2 allows jumping once while in air
+    pub max_jumps: u8,
+    // the number of jumps we have left
+    // TODO: ideally this would be private, but rust doesnt allow 
+    // default with private members in a reasonable way as of yet
+    pub num_jumps_remaining: u8
+}
+
+impl Movement {
+    pub fn can_jump(&self, grounded: bool) -> bool {
+        if grounded && self.max_jumps > 0 {
+            return true;
+        }
+        else if !grounded && self.num_jumps_remaining > 0 {
+            return true;
+        }
+        else {
+            return false;
+        }
+    }
+
+    pub fn consume_jump(&mut self, grounded: bool) {
+        if grounded {
+            self.num_jumps_remaining = self.max_jumps;
+        }
+
+        if self.num_jumps_remaining == 0 {
+            warn!("Tried to consume jump, but no jumps remaining!");
+            return;
+        }
+
+        self.num_jumps_remaining -= 1;
+    }
 }

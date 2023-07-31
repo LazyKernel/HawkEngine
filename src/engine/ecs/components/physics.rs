@@ -13,6 +13,7 @@ use crate::{ecs::resources::physics::PhysicsData, data_structures::graphics::Ver
 #[storage(VecStorage)]
 pub struct RigidBodyComponent {
     pub handle: RigidBodyHandle,
+    pub grounded: bool,
     ccontrol: Option<KinematicCharacterController>
 }
 
@@ -23,7 +24,7 @@ impl RigidBodyComponent {
         }
 
         let handle = physics_data.rigid_body_set.insert(rigid_body);
-        RigidBodyComponent { handle, ccontrol: character_controller }
+        RigidBodyComponent { handle, grounded: false, ccontrol: character_controller }
     }
 
     pub fn transformation_matrix(&self, physics_data: &PhysicsData) -> Matrix4<f32> {
