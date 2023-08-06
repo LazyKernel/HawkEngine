@@ -14,6 +14,7 @@ mod data_structures;
 pub mod ecs;
 mod graphics;
 mod physics;
+mod network;
 mod shaders;
 
 use ecs::ECS;

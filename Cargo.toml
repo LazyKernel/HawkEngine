@@ -26,6 +26,7 @@ rapier3d = { version = "0.17.2", features = ["simd-stable", "serde-serialize"] }
 specs = { version = "0.18.0", features = ["specs-derive"] }
 thiserror = "1.0.37"
 tobj = "3.2.3"
+tokio = { version = "1.29.1", features = ["full"] }
 vulkano = "0.32.0"
 vulkano-shaders = "0.32.0"
 vulkano-win = "0.32.0"

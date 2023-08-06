@@ -86,8 +86,6 @@ impl RigidBodyComponent {
         let accel_gravity = acceleration + physics_data.gravity * 5.0;
         let desired_translation = movement + velocity * dt + 0.5 * accel_gravity * dt * dt;
 
-        println!("{:?}, {:?}, {:?}", accel_gravity, velocity, desired_translation);
-
         let corrected_movement = cc.move_shape(
             dt, 
             &physics_data.rigid_body_set, 

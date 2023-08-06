@@ -6,6 +6,7 @@ use vulkano::{command_buffer::{PrimaryAutoCommandBuffer, allocator::StandardComm
 
 use crate::shaders::default::vs::ty::VPUniformBufferObject;
 
+pub mod network;
 pub mod physics;
 
 pub struct RenderData {
