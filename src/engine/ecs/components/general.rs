@@ -2,12 +2,13 @@ use std::sync::Arc;
 use log::warn;
 use nalgebra::{Matrix4, Vector3, UnitQuaternion};
 use specs::{Component, VecStorage, HashMapStorage, NullStorage};
+use serde::{Serialize, Deserialize};
 use vulkano::{buffer::CpuAccessibleBuffer, descriptor_set::PersistentDescriptorSet};
 
 use crate::data_structures::graphics::Vertex;
 
 
-#[derive(Component, Debug)]
+#[derive(Component, Clone, Copy, Debug, Serialize, Deserialize)]
 #[storage(VecStorage)]
 pub struct Transform {
     /*
@@ -24,10 +25,14 @@ pub struct Transform {
     pub rot: UnitQuaternion<f32>,
     pub scale: Vector3<f32>,
 
+    #[serde(skip)]
     pub mov: Vector3<f32>,
+    #[serde(skip)]
     pub vel: Vector3<f32>,
+    #[serde(skip)]
     pub accel: Vector3<f32>,
 
+    #[serde(skip)]
     pub need_physics_update: bool
 }
 

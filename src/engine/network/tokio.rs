@@ -1,13 +1,13 @@
-use std::{sync::{mpsc::{self, Sender, Receiver}, Arc}, thread, net::IpAddr, time::Duration};
+use std::{sync::Arc, thread, net::IpAddr, time::Duration};
 
 use log::error;
-use tokio::{net::{UdpSocket}, runtime::Runtime, time::timeout};
+use tokio::{sync::mpsc::{self, Sender, Receiver}, net::{UdpSocket}, runtime::Runtime, time::timeout};
 
 use crate::ecs::resources::network::{NetworkMessageData, NetworkData};
 
 const UDP_BUF_SIZE: usize = 1432;
 
-async fn server_loop(socket: UdpSocket, sender: Sender<NetworkMessageData>, receiver: Receiver<NetworkMessageData>) {
+async fn server_loop(socket: UdpSocket, sender: Sender<NetworkMessageData>, mut receiver: Receiver<NetworkMessageData>) {
     let r = Arc::new(socket);
     let s = r.clone();
     let recv_task = tokio::spawn(async move {
@@ -15,14 +15,77 @@ async fn server_loop(socket: UdpSocket, sender: Sender<NetworkMessageData>, rece
         loop {
             // TODO: handle errors
             let (len, addr) = r.recv_from(&mut buf).await.unwrap();
-
             
+            match sender.send(NetworkMessageData {addr, data: buf[..len].to_vec()}).await {
+                Ok(_) => {},
+                Err(e) => error!("Failed to send a network message from async to sync: {e}")
+            } 
         }
     });
+
+    let send_task = tokio::spawn(async move {
+        loop {
+            let message = match receiver.recv().await {
+                Some(v) => v,
+                None => {
+                    error!("Failed to receive message data on async from sync");
+                    continue;
+                }
+            };
+            
+            match s.send_to(&message.data.into_boxed_slice(), message.addr).await {
+                Ok(_) => {},
+                Err(e) => {
+                    error!("Failed to send data to address {:?}: {}", message.addr, e);
+                }
+            }
+        }
+    });
+
+    send_task.await.unwrap_or_else(|e| error!("Failed to join send_task: {e}"));
+    recv_task.await.unwrap_or_else(|e| error!("Failed to join recv_task: {e}"));
 }
 
-async fn client_loop(socket: UdpSocket, addr: IpAddr, port: u16, sender: Sender<NetworkMessageData>, receiver: Receiver<NetworkMessageData>) {
+async fn client_loop(socket: UdpSocket, addr: IpAddr, port: u16, sender: Sender<NetworkMessageData>, mut receiver: Receiver<NetworkMessageData>) {
+    socket.connect((addr, port)).await.unwrap();
+    let r = Arc::new(socket);
+    let s = r.clone();
 
+    
+    let recv_task = tokio::spawn(async move {
+        let mut buf = [0u8; UDP_BUF_SIZE];
+        loop {
+            // TODO: handle errors
+            let len = r.recv(&mut buf).await.unwrap();
+            
+            match sender.send(NetworkMessageData {addr: (addr, port).into(), data: buf[..len].to_vec()}).await {
+                Ok(_) => {},
+                Err(e) => error!("Failed to send a network message from async to sync: {e}")
+            } 
+        }
+    });
+
+    let send_task = tokio::spawn(async move {
+        loop {
+            let message = match receiver.recv().await {
+                Some(v) => v,
+                None => {
+                    error!("Failed to receive message data on async from sync");
+                    continue;
+                }
+            };
+            
+            match s.send(&message.data.into_boxed_slice()).await {
+                Ok(_) => {},
+                Err(e) => {
+                    error!("Failed to send data to address {:?}:{:?}: {}", addr, port, e);
+                }
+            }
+        }
+    });
+
+    send_task.await.unwrap_or_else(|e| error!("Failed to join send_task: {e}"));
+    recv_task.await.unwrap_or_else(|e| error!("Failed to join recv_task: {e}"));
 }
 
 /// If server is true, will use many-to-one style connection
@@ -57,8 +120,8 @@ async fn tokio_network_loop(addr: IpAddr, port: u16, server: bool, sender: Sende
 }
 
 pub fn start_network_thread(address: &str, port: u16, server: bool) -> Option<NetworkData> {
-    let (a2s_sender, a2s_receiver) = mpsc::channel::<NetworkMessageData>();
-    let (s2a_sender, s2a_receiver) = mpsc::channel::<NetworkMessageData>();
+    let (a2s_sender, a2s_receiver) = mpsc::channel::<NetworkMessageData>(16384);
+    let (s2a_sender, s2a_receiver) = mpsc::channel::<NetworkMessageData>(16384);
 
     let addr_parsed= address.parse::<IpAddr>();
     
@@ -87,5 +150,5 @@ pub fn start_network_thread(address: &str, port: u16, server: bool) -> Option<Ne
         });
     });
 
-    return Some(NetworkData {sender: s2a_sender, receiver: a2s_receiver});
+    return Some(NetworkData {sender: s2a_sender, receiver: a2s_receiver, target_addr: (addr_ok, port).into()});
 }
