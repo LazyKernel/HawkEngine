@@ -3,7 +3,7 @@ use std::{sync::Arc, thread, net::IpAddr, time::Duration};
 use log::error;
 use tokio::{sync::mpsc::{self, Sender, Receiver}, net::{UdpSocket}, runtime::Runtime, time::timeout};
 
-use crate::ecs::resources::network::{NetworkMessageData, NetworkData};
+use crate::ecs::resources::network::{NetworkMessageData, NetworkData, NetworkPacket};
 
 const UDP_BUF_SIZE: usize = 1432;
 
@@ -57,8 +57,9 @@ async fn client_loop(socket: UdpSocket, addr: IpAddr, port: u16, sender: Sender<
         loop {
             // TODO: handle errors
             let len = r.recv(&mut buf).await.unwrap();
+            let network_message = rmp_serde::from_slice::<NetworkPacket>(&buf[..len]).unwrap();
             
-            match sender.send(NetworkMessageData {addr: (addr, port).into(), data: buf[..len].to_vec()}).await {
+            match sender.send(NetworkMessageData {addr: (addr, port).into(), packet: network_message}).await {
                 Ok(_) => {},
                 Err(e) => error!("Failed to send a network message from async to sync: {e}")
             } 
@@ -150,5 +151,5 @@ pub fn start_network_thread(address: &str, port: u16, server: bool) -> Option<Ne
         });
     });
 
-    return Some(NetworkData {sender: s2a_sender, receiver: a2s_receiver, target_addr: (addr_ok, port).into()});
+    return Some(NetworkData {sender: s2a_sender, receiver: a2s_receiver, target_addr: (addr_ok, port).into(), ..Default::default()});
 }
