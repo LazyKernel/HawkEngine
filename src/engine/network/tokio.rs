@@ -1,4 +1,4 @@
-use std::{sync::Arc, thread, net::IpAddr, time::Duration};
+use std::{collections::HashMap, default, net::IpAddr, sync::Arc, thread, time::Duration};
 
 use log::error;
 use tokio::{sync::mpsc::{self, Sender, Receiver}, net::{UdpSocket}, runtime::Runtime, time::timeout};
@@ -16,10 +16,10 @@ async fn server_loop(socket: UdpSocket, sender: Sender<NetworkMessageData>, mut 
             // TODO: handle errors
             let (len, addr) = r.recv_from(&mut buf).await.unwrap();
             
-            match sender.send(NetworkMessageData {addr, data: buf[..len].to_vec()}).await {
+            /*match sender.send(NetworkMessageData {addr, data: buf[..len].to_vec()}).await {
                 Ok(_) => {},
                 Err(e) => error!("Failed to send a network message from async to sync: {e}")
-            } 
+            }*/
         }
     });
 
@@ -33,12 +33,12 @@ async fn server_loop(socket: UdpSocket, sender: Sender<NetworkMessageData>, mut 
                 }
             };
             
-            match s.send_to(&message.data.into_boxed_slice(), message.addr).await {
+            /*match s.send_to(&message.data.into_boxed_slice(), message.addr).await {
                 Ok(_) => {},
                 Err(e) => {
                     error!("Failed to send data to address {:?}: {}", message.addr, e);
                 }
-            }
+            }*/
         }
     });
 
@@ -76,12 +76,12 @@ async fn client_loop(socket: UdpSocket, addr: IpAddr, port: u16, sender: Sender<
                 }
             };
             
-            match s.send(&message.data.into_boxed_slice()).await {
+            /*match s.send(&message.data.into_boxed_slice()).await {
                 Ok(_) => {},
                 Err(e) => {
                     error!("Failed to send data to address {:?}:{:?}: {}", addr, port, e);
                 }
-            }
+            }*/
         }
     });
 
@@ -151,5 +151,5 @@ pub fn start_network_thread(address: &str, port: u16, server: bool) -> Option<Ne
         });
     });
 
-    return Some(NetworkData {sender: s2a_sender, receiver: a2s_receiver, target_addr: (addr_ok, port).into(), ..Default::default()});
+    return Some(NetworkData {sender: s2a_sender, receiver: a2s_receiver, target_addr: (addr_ok, port).into(), net_id_ent: HashMap::new()});
 }

@@ -1,7 +1,7 @@
 use log::{warn, error};
 use specs::{System, ReadStorage, Read, WriteStorage, Join};
 
-use crate::ecs::{components::{network::NetworkReplicated, general::Transform}, resources::network::{NetworkData, NetworkMessageData}};
+use crate::ecs::{components::{general::Transform, network::NetworkReplicated}, resources::network::{MessageType, NetworkData, NetworkMessageData, NetworkPacket}};
 
 /// Handler for generic replicated components
 /// Responsible for converting Transform updates to network messages
@@ -35,8 +35,11 @@ impl<'a> System<'a> for GenericHandler {
                 Ok(v) => {
                     let message = NetworkMessageData {
                         addr: net_data.target_addr,
-                        net_id: net_rep.net_id,
-                        data: v 
+                        packet: NetworkPacket {
+                            net_id: net_rep.net_id,
+                            message_type: MessageType::ComponentTransform,
+                            data: v 
+                        }
                     };
 
                     // its fine to not await here for now
