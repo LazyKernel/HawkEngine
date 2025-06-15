@@ -49,19 +49,27 @@ impl<'a> System<'a> for PlayerInput {
             None => return error!("Could not get window in PlayerInput")
         };
 
-        let last_x: Option<f32>;
-        let last_y: Option<f32>;
-        if input.mouse_pressed(0) {
+        let mut last_x: Option<f32> = None;
+        let mut last_y: Option<f32> = None;
+        if input.mouse_pressed(0) && !cursor_grabbed.grabbed {
+            let mut mode = CursorGrabMode::Confined;
             let result = window.set_cursor_grab(CursorGrabMode::Confined)
-                .or_else(|_e| window.set_cursor_grab(CursorGrabMode::Locked));
+                .or_else(|_e| {
+                    mode = CursorGrabMode::Locked;
+                    window.set_cursor_grab(CursorGrabMode::Locked)
+                });
 
             match result {
                 Ok(_) => (),
-                Err(e) => debug!("Failed to grab cursor, probably not a problem: {:?}", e)
+                Err(e) => {
+                    mode = CursorGrabMode::None;
+                    debug!("Failed to grab cursor, probably not a problem: {:?}", e)
+                }
             }
 
-            window.set_cursor_visible(false);
-            cursor_grabbed.0 = true;
+            //window.set_cursor_visible(false);
+            cursor_grabbed.grabbed = true;
+            cursor_grabbed.mode = mode;
         }
 
         if input.key_pressed(VirtualKeyCode::Escape) {
@@ -73,10 +81,11 @@ impl<'a> System<'a> for PlayerInput {
             }
 
             window.set_cursor_visible(true);
-            cursor_grabbed.0 = false;
+            cursor_grabbed.grabbed = false;
+            cursor_grabbed.mode = CursorGrabMode::None;
         }
 
-        if cursor_grabbed.0 {
+        if cursor_grabbed.grabbed && cursor_grabbed.mode == CursorGrabMode::Confined {
             let size = window.inner_size();
 
             last_x = Some((size.width / 2) as f32);
@@ -87,6 +96,9 @@ impl<'a> System<'a> for PlayerInput {
                 Ok(_) => (),
                 Err(e) => debug!("Failed to set cursor position, not available on some platforms: {:?}", e)
             };
+        }
+        else if cursor_grabbed.grabbed {
+
         }
         else {
             return
