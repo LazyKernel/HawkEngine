@@ -93,7 +93,7 @@ fn main() {
 
         match renderable {
             Ok(v) => {
-                world
+                let obj = world
                     .create_entity()
                     .with(v)
                     .with(Transform {
@@ -101,6 +101,7 @@ fn main() {
                         ..Transform::default()
                     })
                     .build();
+                world.insert(obj);
             }
             Err(e) => println!("Failed creating viking_room renderable: {:?}", e)
         }

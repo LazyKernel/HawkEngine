@@ -454,11 +454,11 @@ impl Vulkan {
 
         let image = Image::new(
             self.buffer_memory_allocator.clone(),
-            ImageCreateInfo { image_type: ImageType::Dim2d, format: Format::R8G8B8A8_SRGB, extent: dimensions, array_layers: 1, mip_levels: 1, usage: ImageUsage::SAMPLED, ..Default::default() },
-            AllocationCreateInfo { memory_type_filter: MemoryTypeFilter::PREFER_DEVICE | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE, ..Default::default() }
+            ImageCreateInfo { image_type: ImageType::Dim2d, format: Format::R8G8B8A8_SRGB, extent: dimensions, array_layers: 1, mip_levels: 1, usage: ImageUsage::SAMPLED | ImageUsage::TRANSFER_DST, ..Default::default() },
+            AllocationCreateInfo { memory_type_filter: MemoryTypeFilter::PREFER_DEVICE, ..Default::default() }
         ).unwrap();
 
-        uploads.copy_buffer_to_image(CopyBufferToImageInfo::buffer_image(buffer, image.clone()));
+        uploads.copy_buffer_to_image(CopyBufferToImageInfo::buffer_image(buffer, image.clone())).expect("Copying image buffer failed");
 
         // Need to use the created command buffer to upload the texture to the gpu
         let image_upload = uploads
