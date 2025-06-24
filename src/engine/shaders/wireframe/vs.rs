@@ -2,11 +2,6 @@ use vulkano_shaders;
 
 vulkano_shaders::shader! {
     ty: "vertex",
-    types_meta: {
-        use bytemuck::{Pod, Zeroable};
-
-        #[derive(Clone, Copy, Zeroable, Pod)]
-    },
     src: "
 #version 450
 

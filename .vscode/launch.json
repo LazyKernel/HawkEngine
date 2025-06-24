@@ -5,6 +5,25 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "type": "codelldb",
+            "request": "launch",
+            "name": "NVIM: Debug executable 'test-game'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=test-game",
+                    "--package=hawk-engine"
+                ],
+                "filter": {
+                    "name": "test-game",
+                    "kind": "bin"
+                }
+            },
+            "program": "${workspaceFolder}/target/debug/test-game",
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
             "type": "lldb",
             "request": "launch",
             "name": "Debug unit tests in library 'engine'",

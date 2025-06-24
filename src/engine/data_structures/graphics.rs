@@ -1,20 +1,22 @@
 use std::hash::{Hasher, Hash};
 
 use bytemuck::{Pod, Zeroable};
-use vulkano;
+use vulkano::{self, buffer::BufferContents, pipeline::graphics::vertex_input::Vertex};
 
 #[repr(C)]
-#[derive(Default, Debug, Copy, Clone, Zeroable, Pod)]
-pub struct Vertex {
+#[derive(BufferContents, Vertex, Default, Debug, Copy, Clone)]
+pub struct GenericVertex {
+    #[format(R32G32B32_SFLOAT)]
     pub position: [f32; 3],
+    #[format(R32G32B32_SFLOAT)]
     pub normal: [f32; 3],
+    #[format(R32G32B32_SFLOAT)]
     pub color: [f32; 3],
+    #[format(R32G32_SFLOAT)]
     pub tex_coord: [f32; 2]
 }
 
-vulkano::impl_vertex!(Vertex, position, normal, color, tex_coord);
-
-impl PartialEq for Vertex {
+impl PartialEq for GenericVertex {
     fn eq(&self, other: &Self) -> bool {
         self.position == other.position
             && self.normal == other.normal
@@ -23,9 +25,9 @@ impl PartialEq for Vertex {
     }
 }
 
-impl Eq for Vertex {}
+impl Eq for GenericVertex {}
 
-impl Hash for Vertex {
+impl Hash for GenericVertex {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.position[0].to_bits().hash(state);
         self.position[1].to_bits().hash(state);

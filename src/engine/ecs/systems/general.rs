@@ -5,7 +5,7 @@ use nalgebra::{clamp, UnitQuaternion, Vector3};
 use rapier3d::prelude::RigidBody;
 use specs::{System, Read, ReadStorage, WriteStorage, Write};
 use vulkano::swapchain::Surface;
-use winit::{event::VirtualKeyCode, window::{CursorGrabMode}, dpi::PhysicalPosition};
+use winit::{dpi::PhysicalPosition, event::{MouseButton}, keyboard::KeyCode, window::CursorGrabMode};
 use winit_input_helper::WinitInputHelper;
 
 use crate::{ecs::{components::{general::{Camera, Transform, Movement}, physics::{RigidBodyComponent, ColliderComponent}}, resources::{CursorGrab, physics::PhysicsData, DeltaTime}}, graphics::utils::get_window_from_surface};
@@ -49,9 +49,9 @@ impl<'a> System<'a> for PlayerInput {
             None => return error!("Could not get window in PlayerInput")
         };
 
-        let mut last_x: Option<f32> = None;
-        let mut last_y: Option<f32> = None;
-        if input.mouse_pressed(0) && !cursor_grabbed.grabbed {
+        let mut diff_x: Option<f32> = None;
+        let mut diff_y: Option<f32> = None;
+        if input.mouse_pressed(MouseButton::Left) && !cursor_grabbed.grabbed {
             let mut mode = CursorGrabMode::Confined;
             let result = window.set_cursor_grab(CursorGrabMode::Confined)
                 .or_else(|_e| {
@@ -72,7 +72,7 @@ impl<'a> System<'a> for PlayerInput {
             cursor_grabbed.mode = mode;
         }
 
-        if input.key_pressed(VirtualKeyCode::Escape) {
+        if input.key_pressed(KeyCode::Escape) {
             let result = window.set_cursor_grab(CursorGrabMode::None);
 
             match result {
@@ -85,30 +85,14 @@ impl<'a> System<'a> for PlayerInput {
             cursor_grabbed.mode = CursorGrabMode::None;
         }
 
-        if cursor_grabbed.grabbed && cursor_grabbed.mode == CursorGrabMode::Confined {
-            let size = window.inner_size();
-
-            last_x = Some((size.width / 2) as f32);
-            last_y = Some((size.height / 2) as f32);
-
-            let result = window.set_cursor_position(PhysicalPosition { x: size.width / 2, y: size.height / 2 });
-            match result {
-                Ok(_) => (),
-                Err(e) => debug!("Failed to set cursor position, not available on some platforms: {:?}", e)
-            };
-        }
-        else if cursor_grabbed.grabbed {
-
+        if cursor_grabbed.grabbed {
+            let (dx, dy) = input.mouse_diff();
+            diff_x = Some(dx);
+            diff_y = Some(dy);
         }
         else {
             return
         }
-
-        // the mouse should never be outside but taking it into account still
-        let (x, y) = match input.mouse() {
-            Some(v) => v,
-            None => (0.0, 0.0)
-        };
 
         for (_, r, m, t) in (&camera, &rigid_body, &mut movement, &mut transform).join() {
             if !r.has_character_controller() {
@@ -116,12 +100,12 @@ impl<'a> System<'a> for PlayerInput {
                 continue;
             }
 
-            t.rot = match self.calculate_rotation(x, y, last_x, last_y, m) {
+            t.rot = match self.calculate_rotation(diff_x, diff_y, m) {
                 Some(v) => v,
                 None => t.rot
             };
 
-            if m.can_jump(r.grounded) && input.key_pressed(VirtualKeyCode::Space) {
+            if m.can_jump(r.grounded) && input.key_pressed(KeyCode::Space) {
                 let jump_accel = Vector3::y() * m.jump;
                 t.apply_acceleration(&jump_accel);
                 m.consume_jump(r.grounded)
@@ -133,19 +117,11 @@ impl<'a> System<'a> for PlayerInput {
 }
 
 impl PlayerInput {
-    fn calculate_rotation(&self, x: f32, y: f32, last_x: Option<f32>, last_y: Option<f32>, m: &mut Movement) -> Option<UnitQuaternion<f32>> {
-        let (last_x, last_y) = match (last_x, last_y) {
-            (Some(x), Some(y)) => (x, y),
-            (_, _) => (m.last_x, m.last_y)
-        };
-
-        let mouse_diff = (last_x - x, last_y - y);
+    fn calculate_rotation(&self, diff_x: Option<f32>, diff_y: Option<f32>, m: &mut Movement) -> Option<UnitQuaternion<f32>> {
+        let mouse_diff = (diff_x.unwrap_or(0.0), diff_y.unwrap_or(0.0));
 
         if mouse_diff != (0.0, 0.0) {
             let (dx, dy) = mouse_diff;
-
-            m.last_x = x;
-            m.last_y = y;
 
             m.yaw += dx * m.sensitivity;
             m.pitch = clamp(m.pitch + dy * m.sensitivity, -89.0, 89.0);
@@ -182,16 +158,16 @@ impl PlayerInput {
         }
 
         let mut cum_move = Vector3::new(0.0, 0.0, 0.0);
-        if input.key_held(VirtualKeyCode::W) {
+        if input.key_held(KeyCode::KeyW) {
             cum_move += forward * speed;
         }
-        if input.key_held(VirtualKeyCode::S) {
+        if input.key_held(KeyCode::KeyS) {
             cum_move -= forward * speed;
         }
-        if input.key_held(VirtualKeyCode::A) {
+        if input.key_held(KeyCode::KeyA) {
             cum_move -= right * speed;
         }
-        if input.key_held(VirtualKeyCode::D) {
+        if input.key_held(KeyCode::KeyD) {
             cum_move += right * speed;
         }
 

@@ -51,7 +51,7 @@ fn main() {
         })
         .with(Movement {speed: 10.0, boost: 20.0, slow: 5.0, jump: 3000.0, sensitivity: 0.1, max_jumps: 2, ..Default::default()})
         .with(collider)
-        .with(ColliderRenderable { vertex_buffer: vb, index_buffer: ib })
+        .with(ColliderRenderable { vertex_buffer: (*vb).clone(), index_buffer: (*ib).clone() })
         .with(rigid_body_component)
         .build();
     world.insert(ActiveCamera(camera_entity));
@@ -78,7 +78,7 @@ fn main() {
                 .with(Transform::default())
                 .with(collider)
                 .with(terrain_rb_comp)
-                .with(ColliderRenderable { vertex_buffer: vb, index_buffer: ib })
+                .with(ColliderRenderable { vertex_buffer: (*vb).clone(), index_buffer: (*ib).clone() })
                 .build();
             world.insert(terrain);
         },

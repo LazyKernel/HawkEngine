@@ -1,12 +1,12 @@
-use std::{sync::Arc, ops::Mul};
+use std::sync::Arc;
 
 use log::{error, warn};
 use nalgebra::{Matrix4, Vector3, Quaternion, Isometry, UnitQuaternion, Point3};
 use rapier3d::{prelude::{RigidBodyHandle, RigidBody, Collider, ColliderHandle, QueryFilter, Real, ShapeType}, control::KinematicCharacterController};
 use specs::{Component, VecStorage, HashMapStorage};
-use vulkano::buffer::CpuAccessibleBuffer;
+use vulkano::buffer::Subbuffer;
 
-use crate::{ecs::resources::physics::PhysicsData, data_structures::graphics::Vertex};
+use crate::{ecs::resources::physics::PhysicsData, data_structures::graphics::GenericVertex};
 
 
 #[derive(Component, Default, Debug)]
@@ -158,16 +158,16 @@ impl ColliderComponent {
 #[derive(Component)]
 #[storage(HashMapStorage)]
 pub struct ColliderRenderable {
-    pub vertex_buffer: Arc<CpuAccessibleBuffer<[Vertex]>>, 
-    pub index_buffer: Arc<CpuAccessibleBuffer<[u32]>>
+    pub vertex_buffer: Subbuffer<[GenericVertex]>, 
+    pub index_buffer: Subbuffer<[u32]>
 }
 
 impl ColliderRenderable {
-    pub fn convert_to_vertex(vertices: Vec<Point3<Real>>) -> Vec<Vertex> {
+    pub fn convert_to_vertex(vertices: Vec<Point3<Real>>) -> Vec<GenericVertex> {
         vertices
             .iter()
             .map(|v| {
-                Vertex {
+                GenericVertex {
                     position: v.coords.into(),
                     normal: [0.0, 0.0, 0.0],
                     color: [1.0, 0.0, 0.0],

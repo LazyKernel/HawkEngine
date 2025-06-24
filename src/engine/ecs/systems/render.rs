@@ -1,10 +1,8 @@
-use std::sync::Arc;
-
 use log::error;
 use specs::{System, ReadStorage, Read, Write, Entities, Entity};
-use vulkano::{command_buffer::{RenderPassBeginInfo, SubpassContents, AutoCommandBufferBuilder, CommandBufferUsage, allocator::{CommandBufferAllocator, StandardCommandBufferAllocator}, PrimaryAutoCommandBuffer}, descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet}, pipeline::{Pipeline, PipelineBindPoint}, buffer::TypedBufferAccess};
+use vulkano::{buffer::{Buffer, BufferCreateInfo, BufferUsage}, command_buffer::{AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer, RenderPassBeginInfo, SubpassBeginInfo, SubpassContents, SubpassEndInfo}, descriptor_set::{DescriptorSet, WriteDescriptorSet}, memory::allocator::{AllocationCreateInfo, MemoryTypeFilter}, pipeline::{Pipeline, PipelineBindPoint}};
 
-use crate::{ecs::{components::{general::{Transform, Renderable, Camera, Wireframe}, physics::ColliderRenderable}, resources::{ActiveCamera, RenderData, ProjectionMatrix, CommandBuffer, RenderDataFrameBuffer}}, shaders::default::vs::ty::{VPUniformBufferObject, ModelPushConstants}};
+use crate::{ecs::{components::{general::{Transform, Renderable, Camera, Wireframe}, physics::ColliderRenderable}, resources::{ActiveCamera, RenderData, ProjectionMatrix, CommandBuffer, RenderDataFrameBuffer}}, shaders::default::vs::{VPUniformBufferObject, ModelPushConstants}};
 
 pub struct Render;
 
@@ -38,7 +36,7 @@ impl<'a> System<'a> for Render {
         let render_data = match render_data {
             Some(v) => v,
             None => {
-                error!("Command buffer was none");
+                error!("Render data was none");
                 return
             }
         };
@@ -65,7 +63,7 @@ impl<'a> System<'a> for Render {
 
         // Create a command buffer
         let mut builder = AutoCommandBufferBuilder::primary(
-            &render_data.command_buffer_allocator,
+            render_data.command_buffer_allocator.clone(),
             render_data.queue_family_index,
             CommandBufferUsage::MultipleSubmit
         ).unwrap();
@@ -75,14 +73,26 @@ impl<'a> System<'a> for Render {
             view: view_matrix.into(),
             proj: proj.0.into()
         };
-        let view_ubo = render_data.ubo_pool.from_data(ubo_data).unwrap();
+        let ubo_host_buffer = Buffer::from_data(
+            render_data.buffer_allocator.clone(),
+            BufferCreateInfo {
+                usage: BufferUsage::UNIFORM_BUFFER,
+                ..Default::default()
+            },
+            AllocationCreateInfo {
+                memory_type_filter: MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                ..Default::default()
+            },
+            ubo_data
+        ).unwrap();
 
         // Allocate and write model and view matrix to descriptor set
         let layout_view = render_data.pipeline.layout().set_layouts().get(0).unwrap();
-        let descriptor_set_view = PersistentDescriptorSet::new(
-            &render_data.descriptor_set_allocator,
+        let descriptor_set_view = DescriptorSet::new(
+            render_data.descriptor_set_allocator.clone(),
             layout_view.clone(),
-            [WriteDescriptorSet::buffer(0, view_ubo.clone())]
+            [WriteDescriptorSet::buffer(0, ubo_host_buffer.clone())],
+            []
         ).unwrap();
 
         builder
@@ -91,10 +101,11 @@ impl<'a> System<'a> for Render {
                     clear_values: vec![Some([0.0, 0.0, 0.0, 1.0].into()), Some(1f32.into())],
                     ..RenderPassBeginInfo::framebuffer(framebuffer.0.clone())
                 },
-                SubpassContents::Inline,
+                SubpassBeginInfo { contents: SubpassContents::Inline, ..SubpassBeginInfo::default() },
             )
             .unwrap()
             .bind_pipeline_graphics(render_data.pipeline.clone())
+            .expect("Could not bind graphics pipeline")
             .bind_descriptor_sets(
                 PipelineBindPoint::Graphics, 
                 render_data.pipeline.layout().clone(), 
@@ -109,6 +120,7 @@ impl<'a> System<'a> for Render {
         // Render wireframe pipeline
         builder
             .bind_pipeline_graphics(render_data.pipeline_wireframe.clone())
+            .expect("Could not bind pipeline graphics for wireframe")
             .bind_descriptor_sets(
                 PipelineBindPoint::Graphics, 
                 render_data.pipeline.layout().clone(), 
@@ -122,13 +134,13 @@ impl<'a> System<'a> for Render {
             self.render_entity(e, t, &Renderable { vertex_buffer: r.vertex_buffer.clone(), index_buffer: r.index_buffer.clone(), descriptor_set_texture: descriptor_set_view.clone() }, &mut builder, &render_data, false);
         }
 
-        match builder.end_render_pass() {
+        match builder.end_render_pass(SubpassEndInfo::default()) {
             Ok(v) => v,
             Err(e) => return error!("Failed ending render pass: {:?}", e)
         };
 
         let buffer = match builder.build() {
-            Ok(v) => Arc::new(v),
+            Ok(v) => v,
             Err(e) => return error!("Failed building command buffer: {:?}", e)
         };
 
@@ -142,7 +154,7 @@ impl Render {
         entity: Entity, 
         transform: &Transform, 
         renderable: &Renderable, 
-        builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer, Arc<StandardCommandBufferAllocator>>, 
+        builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>, 
         render_data: &RenderData,
         has_texture: bool
     ) {
@@ -164,14 +176,21 @@ impl Render {
             );
         }
 
-        let result = builder
-            .push_constants(render_data.pipeline.layout().clone(), 0, push_constants)
-            .bind_vertex_buffers(0, r.vertex_buffer.clone())
-            .bind_index_buffer(r.index_buffer.clone())
-            .draw_indexed(r.index_buffer.len() as u32, 1, 0, 0, 0);
 
-        if result.is_err() {
-            error!("Building a command buffer failed for entity {:?}", e);
+        // NOTE: the gpu can do inherently unsafe things outside our control
+        unsafe {
+            let result = builder
+                .push_constants(render_data.pipeline.layout().clone(), 0, push_constants)
+                .expect("Pushing constants failed")
+                .bind_vertex_buffers(0, r.vertex_buffer.clone())
+                .expect("Binding vertex buffers failed")
+                .bind_index_buffer(r.index_buffer.clone())
+                .expect("Binding index buffers failed")
+                .draw_indexed(r.index_buffer.len() as u32, 1, 0, 0, 0);
+
+            if result.is_err() {
+                error!("Building a command buffer failed for entity {:?}", e);
+            }
         }
     }
 }

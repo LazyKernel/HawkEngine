@@ -2,7 +2,7 @@ use std::{fs::File};
 
 use nalgebra::Vector3;
 
-use crate::data_structures::graphics::Vertex;
+use crate::data_structures::graphics::GenericVertex;
 
 
 // Creates a height field matrix from a given heightmap image
@@ -96,9 +96,9 @@ fn get_smooth_normal(x: usize, y: usize, h: usize, w: usize, hf: &Vec<Vec<f32>>)
 }
 
 // Creates terrain vertices from a height field
-pub fn create_terrain_vertices(height_field: &Vec<Vec<f32>>) -> (Vec<Vertex>, Vec<u32>) {
+pub fn create_terrain_vertices(height_field: &Vec<Vec<f32>>) -> (Vec<GenericVertex>, Vec<u32>) {
     let (h, w) = (height_field.len(), height_field[0].len());
-    let mut verts = Vec::<Vertex>::with_capacity(h * w);
+    let mut verts = Vec::<GenericVertex>::with_capacity(h * w);
     let mut indices = Vec::<u32>::with_capacity(h * w);
 
     let xcenter = w as f64 / 2.0 - 0.5;
@@ -108,7 +108,7 @@ pub fn create_terrain_vertices(height_field: &Vec<Vec<f32>>) -> (Vec<Vertex>, Ve
         for x in 0..w {
             let z = height_field[y][x];
             // y is up in our coordinate system but were thinking of the height field as a texture (x,y plane)
-            let vert = Vertex {
+            let vert = GenericVertex {
                 position: [(x as f64 - xcenter) as f32, z, (y as f64 - ycenter) as f32],
                 normal: get_smooth_normal(x, y, h, w, &height_field).into(),
                 color: [1.0, 1.0, 1.0],

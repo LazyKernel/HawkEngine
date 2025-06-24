@@ -25,26 +25,25 @@ use ecs::systems::render::Render;
 use graphics::vulkan::Vulkan;
 use log::{info, trace};
 use nalgebra::Perspective3;
-use shaders::default::vs::ty::VPUniformBufferObject;
 use specs::{WorldExt, DispatcherBuilder, Dispatcher};
-use vulkano::buffer::CpuBufferPool;
+use vulkano::buffer::Buffer;
 use vulkano::pipeline::graphics::rasterization::{RasterizationState, PolygonMode};
 use vulkano::pipeline::{GraphicsPipeline};
 use vulkano::pipeline::graphics::viewport::{Viewport};
-use vulkano::shader;
-use vulkano::swapchain::{Swapchain, SwapchainCreateInfo, Surface, SwapchainCreationError, acquire_next_image, AcquireError, SwapchainPresentInfo};
-use vulkano::sync::{self, GpuFuture, FenceSignalFuture};
-use vulkano::sync::FlushError;
+use vulkano::swapchain::{Swapchain, SwapchainCreateInfo, Surface, acquire_next_image, SwapchainPresentInfo};
+use vulkano::sync::future::FenceSignalFuture;
+use vulkano::sync::{self, GpuFuture};
+use vulkano::VulkanError;
 use winit_input_helper::WinitInputHelper;
 
 use std::sync::Arc;
 use std::time::Instant;
-use winit::event_loop::{ControlFlow, EventLoop};
+use winit::event_loop::EventLoop;
 use vulkano::device::{
     Device, 
     Queue, DeviceExtensions,
 };
-use vulkano::image::{SwapchainImage};
+use vulkano::image::{Image};
 use vulkano::render_pass::{RenderPass, Framebuffer};
 
 #[cfg(all(debug_assertions))]
@@ -61,8 +60,8 @@ pub struct HawkEngine<'a> {
     pipeline_wireframe: Arc<GraphicsPipeline>,
     surface: Arc<Surface>,
     swapchain: Arc<Swapchain>,
-    images: Vec<Arc<SwapchainImage>>,
-    ubo_pool: Arc<CpuBufferPool<VPUniformBufferObject>>,
+    images: Vec<Arc<Image>>,
+    ubo_pool: Arc<Buffer>,
 
     pub vulkan: Vulkan,
 
@@ -110,8 +109,8 @@ impl<'a> HawkEngine<'a> {
             ..DeviceExtensions::empty()
         };
 
-        let event_loop = EventLoop::new();
-        let instance = Vulkan::create_instance(ENABLE_VALIDATION_LAYERS);
+        let event_loop = EventLoop::new().expect("Could not create event loop");
+        let instance = Vulkan::create_instance(&event_loop, ENABLE_VALIDATION_LAYERS);
         let surface = Vulkan::create_surface(&instance, &event_loop);
         let (physical, queue_index) = Vulkan::select_physical_device(&instance, &surface, &device_extensions);
         let (device, queue) = Vulkan::create_device(&physical, queue_index, &device_extensions);
@@ -173,6 +172,7 @@ pub fn start_engine(mut engine: HawkEngine<'static>) {
         pipeline: engine.pipeline.clone(),
         pipeline_wireframe: engine.pipeline_wireframe.clone(),
         ubo_pool: engine.ubo_pool.clone(),
+        buffer_allocator: engine.vulkan.buffer_memory_allocator.clone(),
         command_buffer_allocator: engine.vulkan.command_buffer_allocator.clone(),
         descriptor_set_allocator: engine.vulkan.descriptor_set_allocator.clone(),
         queue_family_index: engine.vulkan.queue.queue_family_index()
@@ -186,12 +186,12 @@ pub fn start_engine(mut engine: HawkEngine<'static>) {
     let mut last_time = Instant::now();
 
     // look into this when rendering https://www.reddit.com/r/vulkan/comments/e7n5b6/drawing_multiple_objects/
-    engine.event_loop.run(move |event, _, control_flow| {
+    let _ = engine.event_loop.run(move |event, window_target| {
         // Render a frame if app not being destroyed
         if input.update(&event) && !destroying {
-            if input.quit() {
+            if input.destroyed() {
                 destroying = true;
-                *control_flow = ControlFlow::Exit;
+                window_target.exit();
             }
 
             if input.window_resized().is_some() || recreate_swapchain {
@@ -211,10 +211,10 @@ pub fn start_engine(mut engine: HawkEngine<'static>) {
                     Ok(r) => r,
                     // Apparently the creation can fail if the user keeps resizing
                     // In that case we can just try to recreate again on the next frame
-                    Err(SwapchainCreationError::ImageExtentNotSupported { .. }) => return,
+                    //Err(SwapchainCreationError::ImageExtentNotSupported { .. }) => return,
                     // Happens when minimized
-                    Err(SwapchainCreationError::ImageExtentZeroLengthDimensions { .. }) => return,
-                    Err(e) => panic!("Failed to recreate swapcahin: {:?}", e),
+                    //Err(SwapchainCreationError::ImageExtentZeroLengthDimensions { .. }) => return,
+                    Err(e) => panic!("Failed to recreate swapchain: {:?}", e),
                 };
                 engine.swapchain = new_swapchain;
                 let new_framebuffers = engine.vulkan.create_framebuffers(
@@ -225,9 +225,9 @@ pub fn start_engine(mut engine: HawkEngine<'static>) {
                 if input.window_resized().is_some() {
 
                     let viewport = Viewport {
-                        origin: [0.0, 0.0],
-                        dimensions: new_dimensions.into(),
-                        depth_range: 0.0..1.0,
+                        offset: [0.0, 0.0],
+                        extent: new_dimensions.into(),
+                        depth_range: 0.0..=1.0,
                     };
 
                     // TODO: do not load these again every time
@@ -280,10 +280,10 @@ pub fn start_engine(mut engine: HawkEngine<'static>) {
             let (image_i, suboptimal, acquire_future) =
                 match acquire_next_image(engine.swapchain.clone(), None) {
                     Ok(r) => (usize::try_from(r.0).unwrap(), r.1, r.2),
-                    Err(AcquireError::OutOfDate) => {
+                    /*Err(AcquireError::OutOfDate) => {
                         recreate_swapchain = true;
                         return;
-                    }
+                    }*/
                     Err(e) => panic!("Failed to acquire next image: {:?}", e),
                 };
             
@@ -346,10 +346,10 @@ pub fn start_engine(mut engine: HawkEngine<'static>) {
 
             fences[image_i] = match future {
                 Ok(value) => Some(Arc::new(value)),
-                Err(FlushError::OutOfDate) => {
+                /*Err(FlushError::OutOfDate) => {
                     recreate_swapchain = true;
                     None
-                }
+                }*/
                 Err(e) => {
                     info!("Failed to flush future: {:?}", e);
                     None

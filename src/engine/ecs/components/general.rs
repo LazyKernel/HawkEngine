@@ -3,9 +3,9 @@ use log::warn;
 use nalgebra::{Matrix4, Vector3, UnitQuaternion};
 use specs::{Component, VecStorage, HashMapStorage, NullStorage};
 use serde::{Serialize, Deserialize};
-use vulkano::{buffer::CpuAccessibleBuffer, descriptor_set::PersistentDescriptorSet};
+use vulkano::{buffer::Subbuffer, descriptor_set::DescriptorSet};
 
-use crate::data_structures::graphics::Vertex;
+use crate::data_structures::graphics::GenericVertex;
 
 
 #[derive(Component, Clone, Copy, Debug, Serialize, Deserialize)]
@@ -87,9 +87,9 @@ impl Default for Transform {
 pub struct Renderable {
     // TODO: maybe switch to dense vec storage if we have a lot of 
     // non-rendered entities
-    pub vertex_buffer: Arc<CpuAccessibleBuffer<[Vertex]>>, 
-    pub index_buffer: Arc<CpuAccessibleBuffer<[u32]>>,
-    pub descriptor_set_texture: Arc<PersistentDescriptorSet>
+    pub vertex_buffer: Subbuffer<[GenericVertex]>, 
+    pub index_buffer: Subbuffer<[u32]>,
+    pub descriptor_set_texture: Arc<DescriptorSet>
 }
 
 #[derive(Component, Default)]

@@ -2,10 +2,9 @@ use std::sync::Arc;
 
 use nalgebra::Matrix4;
 use specs::Entity;
-use vulkano::{command_buffer::{PrimaryAutoCommandBuffer, allocator::StandardCommandBufferAllocator}, pipeline::GraphicsPipeline, render_pass::Framebuffer, buffer::CpuBufferPool, descriptor_set::allocator::StandardDescriptorSetAllocator};
+use vulkano::{buffer::Buffer, command_buffer::{allocator::StandardCommandBufferAllocator, PrimaryAutoCommandBuffer}, descriptor_set::allocator::StandardDescriptorSetAllocator, memory::allocator::StandardMemoryAllocator, pipeline::GraphicsPipeline, render_pass::Framebuffer};
 use winit::window::CursorGrabMode;
 
-use crate::shaders::default::vs::ty::VPUniformBufferObject;
 
 pub mod network;
 pub mod physics;
@@ -13,7 +12,8 @@ pub mod physics;
 pub struct RenderData {
     pub pipeline: Arc<GraphicsPipeline>,
     pub pipeline_wireframe: Arc<GraphicsPipeline>,
-    pub ubo_pool: Arc<CpuBufferPool<VPUniformBufferObject>>,
+    pub ubo_pool: Arc<Buffer>,
+    pub buffer_allocator: Arc<StandardMemoryAllocator>,
     pub command_buffer_allocator: Arc<StandardCommandBufferAllocator>,
     pub descriptor_set_allocator: Arc<StandardDescriptorSetAllocator>,
     pub queue_family_index: u32
