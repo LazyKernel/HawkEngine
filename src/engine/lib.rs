@@ -93,7 +93,7 @@ impl<'a> HawkEngine<'a> {
 }
 
 
-pub fn start_engine(mut engine: HawkEngine<'static>, event_loop: EventLoop<()>) {
+pub fn start_engine(engine: HawkEngine<'static>, event_loop: EventLoop<()>) {
     // look into this when rendering https://www.reddit.com/r/vulkan/comments/e7n5b6/drawing_multiple_objects/
     let mut window_state = WindowState::new();
     window_state.run(event_loop, engine);

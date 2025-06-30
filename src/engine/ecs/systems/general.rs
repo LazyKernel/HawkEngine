@@ -1,13 +1,12 @@
 use std::sync::Arc;
 
-use log::{error, debug, warn};
+use log::{error, debug};
 use nalgebra::{clamp, UnitQuaternion, Vector3};
-use rapier3d::prelude::RigidBody;
 use specs::{System, Read, ReadStorage, WriteStorage, Write};
 use vulkano::swapchain::Surface;
-use winit::{dpi::PhysicalPosition, event::{MouseButton}, keyboard::KeyCode, window::CursorGrabMode};
+use winit::{event::{MouseButton}, keyboard::KeyCode, window::CursorGrabMode};
 
-use crate::{ecs::{components::{general::{Camera, Movement, Transform}, physics::{ColliderComponent, RigidBodyComponent}}, resources::{physics::PhysicsData, CursorGrab, DeltaTime}, utils::input::InputHelper}, graphics::utils::get_window_from_surface};
+use crate::{ecs::{components::{general::{Camera, Movement, Transform}, physics::RigidBodyComponent}, resources::{CursorGrab, DeltaTime}, utils::input::InputHelper}, graphics::utils::get_window_from_surface};
 
 pub struct PlayerInput;
 

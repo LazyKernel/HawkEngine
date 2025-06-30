@@ -1,5 +1,5 @@
 use log::{trace, warn};
-use winit::{event::{DeviceEvent, ElementState, KeyEvent, Modifiers, MouseButton}, keyboard::{Key, KeyCode, ModifiersState, PhysicalKey}};
+use winit::{event::{DeviceEvent, ElementState, KeyEvent, Modifiers, MouseButton}, keyboard::{KeyCode, ModifiersState, PhysicalKey}};
 
 
 // Heavily inspired by winit_input_helper

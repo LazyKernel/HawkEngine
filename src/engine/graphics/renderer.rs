@@ -10,7 +10,7 @@ use vulkano::swapchain::{Swapchain, Surface};
 use winit::window::{Window};
 
 use std::sync::Arc;
-use winit::event_loop::{ActiveEventLoop, EventLoop};
+use winit::event_loop::ActiveEventLoop;
 use vulkano::device::{
     Device, 
     Queue, DeviceExtensions,

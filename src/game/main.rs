@@ -1,13 +1,10 @@
-use std::f32::consts::PI;
 
 use log::error;
-use engine::{HawkEngine, start_engine, ecs::{components::{general::{Transform, Camera, Movement, Wireframe}, physics::{RigidBodyComponent, ColliderComponent, ColliderRenderable}}, resources::{ActiveCamera, physics::PhysicsData}, utils::objects::create_terrain}};
-use nalgebra::{Vector3, UnitQuaternion, UnitVector3};
-use rapier3d::{control::{KinematicCharacterController, CharacterLength}, prelude::{RigidBodyBuilder, RigidBodyType, ColliderBuilder, SharedShape, UnitVector, ActiveCollisionTypes}};
+use engine::{HawkEngine, start_engine, ecs::{components::{general::{Transform, Camera, Movement}, physics::{RigidBodyComponent, ColliderComponent, ColliderRenderable}}, resources::{ActiveCamera, physics::PhysicsData}, utils::objects::create_terrain}};
+use nalgebra::Vector3;
+use rapier3d::{control::{KinematicCharacterController, CharacterLength}, prelude::{RigidBodyBuilder, RigidBodyType, ColliderBuilder, SharedShape}};
 use specs::{WorldExt, Builder};
 use winit::event_loop::EventLoop;
-use engine::WindowState;
-use engine::Renderer;
 
 fn init(engine: &mut HawkEngine) {
     let world = &mut engine.ecs.world;

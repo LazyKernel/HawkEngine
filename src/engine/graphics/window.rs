@@ -1,14 +1,10 @@
-use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Instant;
 
 use log::{info, trace, warn};
-use nalgebra::Perspective3;
 use specs::WorldExt;
 use vulkano::command_buffer::CommandBufferExecFuture;
 use vulkano::image::Image;
-use vulkano::pipeline::graphics::rasterization::{PolygonMode, RasterizationState};
-use vulkano::pipeline::graphics::viewport::Viewport;
 use vulkano::render_pass::Framebuffer;
 use vulkano::swapchain::{acquire_next_image, PresentFuture, SwapchainAcquireFuture, SwapchainCreateInfo, SwapchainPresentInfo};
 use vulkano::sync::{self, GpuFuture};
@@ -18,10 +14,10 @@ use winit::dpi::LogicalSize;
 use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::window::{Window, WindowId};
-use crate::ecs::resources::{CommandBuffer, DeltaTime, ProjectionMatrix, RenderDataFrameBuffer};
+use crate::ecs::resources::{CommandBuffer, DeltaTime, RenderDataFrameBuffer};
 use crate::ecs::utils::input::InputHelper;
 use crate::graphics::renderer::Renderer;
-use crate::{shaders, HawkEngine};
+use crate::HawkEngine;
 
 pub struct WindowState<'a> {
     pub window: Option<Arc<Window>>,

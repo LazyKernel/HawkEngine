@@ -1,6 +1,6 @@
 use log::warn;
 use nalgebra::{Vector3, ComplexField};
-use rapier3d::prelude::{IntegrationParameters, EventHandler};
+use rapier3d::prelude::IntegrationParameters;
 use specs::{System, Write, Read, ReadStorage, WriteStorage};
 
 use crate::ecs::{resources::{physics::PhysicsData, DeltaTime}, components::{general::Transform, physics::{RigidBodyComponent, ColliderComponent}}, utils::debug::DebugEventHandler};

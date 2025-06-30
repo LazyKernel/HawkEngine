@@ -1,4 +1,3 @@
-use std::sync::Arc;
 
 use log::{error, warn};
 use nalgebra::{Matrix4, Vector3, Quaternion, Isometry, UnitQuaternion, Point3};

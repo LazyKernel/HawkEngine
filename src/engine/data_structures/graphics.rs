@@ -1,6 +1,5 @@
 use std::hash::{Hasher, Hash};
 
-use bytemuck::{Pod, Zeroable};
 use vulkano::{self, buffer::BufferContents, pipeline::graphics::vertex_input::Vertex};
 
 #[repr(C)]
