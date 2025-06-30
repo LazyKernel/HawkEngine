@@ -32,8 +32,8 @@ use std::num::NonZero;
 use std::sync::Arc;
 use anyhow::{anyhow};
 use winit::dpi::LogicalSize;
-use winit::event_loop::{EventLoop};
-use winit::window::{Window, WindowBuilder};
+use winit::event_loop::{ActiveEventLoop, EventLoop};
+use winit::window::{Window};
 use vulkano::VulkanLibrary;
 use vulkano::instance::{
     Instance, InstanceCreateFlags, InstanceCreateInfo, InstanceExtensions, Version
@@ -105,7 +105,7 @@ impl Vulkan {
     // Static functions
     //--------------------------
 
-    pub fn create_instance(event_loop: &EventLoop<()>, debug: bool) -> Arc<Instance> {
+    pub fn create_instance(event_loop: &ActiveEventLoop, debug: bool) -> Arc<Instance> {
         let library = VulkanLibrary::new().unwrap();
         let required_extensions = Surface::required_extensions(event_loop).unwrap_or_default();
     
@@ -143,14 +143,8 @@ impl Vulkan {
             .map_err(|b| anyhow!("{}", b)).expect("Failed creating instance")
     }
 
-    pub fn create_surface(instance: &Arc<Instance>, event_loop: &EventLoop<()>) -> Arc<Surface> {
-        let window = WindowBuilder::new()
-            .with_title("HawkEngine")
-            .with_inner_size(LogicalSize::new(1024, 768))
-            .build(event_loop)
-            .unwrap();
-        
-        Surface::from_window(instance.clone(), window.into()).expect("")
+    pub fn create_surface(instance: &Arc<Instance>, window: Arc<Window>) -> Arc<Surface> {
+        Surface::from_window(instance.clone(), window.clone()).expect("Could not create surface")
     }
     
     pub fn select_physical_device(instance: &Arc<Instance>, surface: &Arc<Surface>, device_extensions: &DeviceExtensions) -> (Arc<PhysicalDevice>, u32) {

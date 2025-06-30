@@ -33,8 +33,7 @@ tokio = { version = "1.29.1", features = ["full"] }
 uuid = { version = "1.4.1", features = ["serde"] }
 vulkano = "0.35"
 vulkano-shaders = { version = "0.35", features = ["shaderc-build-from-source"] }
-winit = "0.29"
-winit_input_helper = "0.16"
+winit = "0.30"
 
 [profile.dev]
 opt-level = 1 

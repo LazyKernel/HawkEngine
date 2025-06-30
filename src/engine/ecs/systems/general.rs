@@ -6,16 +6,15 @@ use rapier3d::prelude::RigidBody;
 use specs::{System, Read, ReadStorage, WriteStorage, Write};
 use vulkano::swapchain::Surface;
 use winit::{dpi::PhysicalPosition, event::{MouseButton}, keyboard::KeyCode, window::CursorGrabMode};
-use winit_input_helper::WinitInputHelper;
 
-use crate::{ecs::{components::{general::{Camera, Transform, Movement}, physics::{RigidBodyComponent, ColliderComponent}}, resources::{CursorGrab, physics::PhysicsData, DeltaTime}}, graphics::utils::get_window_from_surface};
+use crate::{ecs::{components::{general::{Camera, Movement, Transform}, physics::{ColliderComponent, RigidBodyComponent}}, resources::{physics::PhysicsData, CursorGrab, DeltaTime}, utils::input::InputHelper}, graphics::utils::get_window_from_surface};
 
 pub struct PlayerInput;
 
 impl<'a> System<'a> for PlayerInput {
     type SystemData = (
         Read<'a, DeltaTime>,
-        Option<Read<'a, Arc<WinitInputHelper>>>,
+        Option<Read<'a, InputHelper>>,
         Option<Read<'a, Arc<Surface>>>,
         Write<'a, CursorGrab>,
         ReadStorage<'a, Camera>,
@@ -145,7 +144,7 @@ impl PlayerInput {
         }
     }
 
-    fn calculate_movement(&self, input: &Arc<WinitInputHelper>, rot: &UnitQuaternion<f32>, m: &Movement, delta: f32) -> Vector3<f32> {
+    fn calculate_movement(&self, input: &InputHelper, rot: &UnitQuaternion<f32>, m: &Movement, delta: f32) -> Vector3<f32> {
         let forward = rot * Vector3::new(0.0, 0.0, -1.0);
         let right = rot * Vector3::new(1.0, 0.0, 0.0);
 
