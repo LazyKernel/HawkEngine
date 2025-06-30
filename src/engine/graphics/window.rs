@@ -204,6 +204,8 @@ impl<'a> WindowState<'a> {
         }
         engine.ecs.world.maintain();
 
+        self.input_helper.step();
+
         let command_buffer = engine.ecs.world.read_resource::<CommandBuffer>();
         let command_buffer = match &command_buffer.command_buffer {
             Some(v) => v,
@@ -269,15 +271,18 @@ impl ApplicationHandler for WindowState<'_> {
 
     fn window_event(
         &mut self,
-        _event_loop: &ActiveEventLoop,
+        event_loop: &ActiveEventLoop,
         _window_id: WindowId,
         event: WindowEvent,
     ) {
         match event {
             WindowEvent::Resized(physical_size) => info!("Resize requested"),
-            WindowEvent::CloseRequested => info!("Close requested"),
+            WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Destroyed => info!("Window destroyed"),
-            WindowEvent::Focused(_) => info!("Window focused"),
+            WindowEvent::Focused(_) => {
+                // NOTE: we can use this at some point to filter device events
+                // since those don't automatically get filtered out when the window isn't focused
+            },
             WindowEvent::KeyboardInput { device_id: _, event, is_synthetic: _ } => self.input_helper.handle_keyboard_input(event),
             WindowEvent::ModifiersChanged(modifiers) => self.input_helper.handle_modifiers(modifiers),
             WindowEvent::CursorMoved { device_id: _, position: _ } => trace!("CursorMoved not implemented, using device event instead"),
@@ -285,7 +290,12 @@ impl ApplicationHandler for WindowState<'_> {
             WindowEvent::CursorLeft { device_id: _ } => trace!("CursorLeft not implemented"),
             WindowEvent::MouseWheel { device_id: _, delta: _, phase: _ } => trace!("MouseWheel not implemented"),
             WindowEvent::MouseInput { device_id: _, state, button } => self.input_helper.handle_mouse_event(state, button),
+            WindowEvent::TouchpadPressure { device_id: _, pressure, stage } => self.input_helper.handle_touchpad_event(pressure, stage),
             WindowEvent::RedrawRequested => self.render(),
+            WindowEvent::Occluded(_) => {
+                // NOTE: We could use this to optimize rendering
+                // No need to draw when the window is occluded
+            },
             _ => warn!("Missing arm for winit event {:?}", event)
         }
     }

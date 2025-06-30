@@ -1,4 +1,4 @@
-use log::trace;
+use log::{trace, warn};
 use winit::{event::{DeviceEvent, ElementState, KeyEvent, Modifiers, MouseButton}, keyboard::{Key, KeyCode, ModifiersState, PhysicalKey}};
 
 
@@ -117,6 +117,24 @@ impl InputHelper {
             },
             _ => trace!("Device event not implemented: {:?}", device_event),
         }
+    }
+
+    pub fn handle_touchpad_event(&mut self, _pressure: f32, stage: i64) {
+        match stage {
+            0 => {
+                // 0 usually means released
+                self.mouse_actions.push(MouseAction::Released(MouseButton::Left));
+                self.mouse_buttons_held.retain(|x| *x != MouseButton::Left);
+            },
+            1 => {
+                // 1 usually means pressed
+                if !self.mouse_buttons_held.contains(&MouseButton::Left) {
+                    self.mouse_actions.push(MouseAction::Pressed(MouseButton::Left));
+                    self.mouse_buttons_held.push(MouseButton::Left);
+                }
+            },
+            _ => warn!("Missing touchpad event stage {:?}", stage)
+        };
     }
 
     pub fn handle_modifiers(&mut self, modifiers: Modifiers) {
