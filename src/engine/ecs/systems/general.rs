@@ -65,7 +65,7 @@ impl<'a> System<'a> for PlayerInput {
                 }
             }
 
-            //window.set_cursor_visible(false);
+            window.set_cursor_visible(false);
             cursor_grabbed.grabbed = true;
             cursor_grabbed.mode = mode;
         }
