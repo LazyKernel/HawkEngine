@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use log::{info, trace, warn};
 use specs::WorldExt;
@@ -24,21 +24,25 @@ pub struct WindowState<'a> {
     input_helper: InputHelper,
     engine: Option<HawkEngine<'a>>,
     last_time: Instant,
+    target_frame_time: Duration,
+
 
     fences: Vec<Option<Arc<FenceSignalFuture<PresentFuture<CommandBufferExecFuture<JoinFuture<Box<dyn GpuFuture + 'static>, SwapchainAcquireFuture>>>>>>>,
-    previous_fence_i: usize
+    previous_fence_i: usize,
 }
 
 impl<'a> WindowState<'a> {
     pub fn new() -> WindowState<'a> {
+        let target_fps = 60;
         Self {
             window: None,
             engine: None,
             input_helper: InputHelper::new(),
             last_time: Instant::now(),
+            target_frame_time: Duration::new(0, (1e9 / (target_fps as f64)).round() as u32),
 
             fences: vec![None; 0],
-            previous_fence_i: 0
+            previous_fence_i: 0,
         }
     }
 
@@ -49,6 +53,7 @@ impl<'a> WindowState<'a> {
 
     pub fn run(&mut self, event_loop: EventLoop<()>, engine: HawkEngine<'a>) {
         self.engine = Some(engine);
+
         let _ = event_loop.run_app(self);
     }
 
@@ -287,7 +292,13 @@ impl ApplicationHandler for WindowState<'_> {
             WindowEvent::MouseWheel { device_id: _, delta: _, phase: _ } => trace!("MouseWheel not implemented"),
             WindowEvent::MouseInput { device_id: _, state, button } => self.input_helper.handle_mouse_event(state, button),
             WindowEvent::TouchpadPressure { device_id: _, pressure, stage } => self.input_helper.handle_touchpad_event(pressure, stage),
-            WindowEvent::RedrawRequested => self.render(),
+            WindowEvent::RedrawRequested => {
+                if Instant::now() - self.last_time >= self.target_frame_time {
+                    self.render();
+                }
+
+                self.window.as_ref().unwrap().request_redraw();
+            },
             WindowEvent::Occluded(_) => {
                 // NOTE: We could use this to optimize rendering
                 // No need to draw when the window is occluded
