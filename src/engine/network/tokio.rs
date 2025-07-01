@@ -141,7 +141,7 @@ pub fn start_network_thread(address: &str, port: u16, server: bool) -> Option<Ne
         let rt = match rt_res {
             Ok(v) => v,
             Err(e) => {
-                error!("Failed creating tokio runtime.");
+                error!("Failed creating tokio runtime.\n{:?}", e);
                 return;
             }
         }; 
