@@ -121,8 +121,8 @@ impl PlayerInput {
         if mouse_diff != (0.0, 0.0) {
             let (dx, dy) = mouse_diff;
 
-            m.yaw += dx * m.sensitivity;
-            m.pitch = clamp(m.pitch + dy * m.sensitivity, -89.0, 89.0);
+            m.yaw += -dx * m.sensitivity;
+            m.pitch = clamp(m.pitch - dy * m.sensitivity, -89.0, 89.0);
 
             if m.yaw > 360.0 {
                 m.yaw -= 360.0;

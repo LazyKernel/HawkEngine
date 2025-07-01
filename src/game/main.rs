@@ -54,7 +54,7 @@ fn init(engine: &mut HawkEngine) {
         })
         .with(Movement {speed: 10.0, boost: 20.0, slow: 5.0, jump: 3000.0, sensitivity: 0.1, max_jumps: 2, ..Default::default()})
         .with(collider)
-        .with(ColliderRenderable { vertex_buffer: (*vb).clone(), index_buffer: (*ib).clone() })
+        //.with(ColliderRenderable { vertex_buffer: (*vb).clone(), index_buffer: (*ib).clone() })
         .with(rigid_body_component)
         .build();
     world.insert(ActiveCamera(camera_entity));

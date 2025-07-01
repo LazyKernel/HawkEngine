@@ -198,7 +198,7 @@ impl Vulkan {
             .expect("failed to get surface capabilities");
     
         let dimensions = surface.object().unwrap().downcast_ref::<Window>().unwrap().inner_size();
-        let composite_alpha = CompositeAlpha::Inherit;
+        let composite_alpha = if caps.supported_composite_alpha.contains(CompositeAlpha::PreMultiplied.into()) { CompositeAlpha::PreMultiplied } else { CompositeAlpha::Opaque };
         let image_format = physical
                             .surface_formats(surface, Default::default())
                             .unwrap()[0]
