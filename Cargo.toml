@@ -35,7 +35,7 @@ serde = { version = "1.0", features = ["derive"] }
 thiserror = "1.0.37"
 tobj = "3.2.3"
 tokio = { version = "1.45", features = ["full"] }
-uuid = { version = "1.4.1", features = ["serde"] }
+uuid = { version = "1.4.1", features = ["serde", "v4"] }
 vulkano = "0.35"
 vulkano-shaders = { version = "0.35", features = ["shaderc-build-from-source"] }
 winit = "0.30"
