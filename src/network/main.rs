@@ -1,5 +1,5 @@
-use std::{collections::HashMap, env, net::SocketAddr, time::Instant};
-use log::{error, info, log};
+use std::{collections::HashMap, env, error::Error, net::SocketAddr, time::Instant};
+use log::{error, info, log, warn};
 use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::{tcp, TcpListener, TcpStream, UdpSocket}};
 use uuid::{uuid, Uuid};
 use serde::{Serialize, Deserialize};
@@ -7,6 +7,19 @@ use serde::{Serialize, Deserialize};
 struct Client {
     client_id: Uuid,
     last_keep_alive: Instant
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+enum NetworkMessageType {
+    Unknown = 0,
+    ConnectionRequest,
+    ConnectionAccept,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct NetworkMessage {
+    message_type: NetworkMessageType,
+    payload: Vec<u8>
 }
 
 #[derive(Serialize, Deserialize)]
@@ -24,6 +37,34 @@ impl Default for Client {
     }
 }
 
+fn build_network_message<T: Serialize>(message_type: NetworkMessageType, payload: Option<T>) -> Result<Vec<u8>, rmp_serde::encode::Error> {
+    let net_msg = NetworkMessage {
+        message_type: message_type,
+        payload: match payload {
+            Some(v) => rmp_serde::to_vec(&v)?,
+            None => Vec::<u8>::default(),
+        }
+    };
+
+    return rmp_serde::to_vec(&net_msg);
+}
+
+fn server_handle_connect(clients: &mut HashMap<SocketAddr, Client>, addr: SocketAddr) -> Vec<u8> {
+    let client = Client::default();
+
+    println!("New client connected with ID: {}", client.client_id);
+
+    let conn_acc = ConnectionAccepted {client_id: client.client_id, server_version: "0.0.1".into()};
+    let conn_acc_msg = build_network_message(NetworkMessageType::ConnectionAccept, Some(conn_acc)).expect("Could not serialize ConnectionAccept");
+    clients.insert(addr, client);
+
+    return conn_acc_msg;
+}
+
+fn client_handle_connect() {
+
+}
+
 async fn server() {
     let tcp_listener = TcpListener::bind("127.0.0.1:6782").await.unwrap();
     let udp_socket = UdpSocket::bind("0.0.0.0:6782").await.unwrap();
@@ -32,24 +73,21 @@ async fn server() {
 
     loop {
         let (mut socket, addr) = tcp_listener.accept().await.unwrap();
-        
-        let client = Client::default();
-
-        // let network_message = rmp_serde::from_slice::<NetworkPacket>(&buf[..len]).unwrap();
-        println!("New client connected with ID: {}", client.client_id);
-
-        let conn_acc_msg = rmp_serde::to_vec(&ConnectionAccepted {client_id: client.client_id, server_version: "0.0.1".into()}).expect("Could not serialize ConnectionAccept");
-        clients.insert(addr, client);
-
-
-        let _ = socket.write_all(conn_acc_msg.as_slice()).await;
 
         tokio::spawn(async move {
             let mut buf = [0u8; 512];
             if let Ok(num_bytes) = socket.read(&mut buf[..]).await {
                 println!("Read n bytes: {:?}", num_bytes);
-                match str::from_utf8(&buf[..num_bytes]) {
-                    Ok(v) => println!("{v}"),
+                match rmp_serde::from_slice::<NetworkMessage>(&buf[..num_bytes]) {
+                    Ok(v) => {
+                        match v.message_type {
+                            NetworkMessageType::ConnectionRequest => {
+                                let conn_acc_msg = server_handle_connect(&mut clients, addr);
+                                let _ = socket.write_all(conn_acc_msg.as_slice()).await;
+                            },
+                            _ => warn!("Unsupported message type: {:?}", v.message_type),
+                        }
+                    },
                     Err(e) => error!("Error parsing received buffer: {:?}", e),
                 }
             }
