@@ -1,5 +1,5 @@
 use std::{collections::HashMap, env, error::Error, net::SocketAddr, sync::Arc, time::Instant};
-use log::{error, info, log, warn};
+use log::{error, info, log, trace, warn};
 use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::{tcp, TcpListener, TcpStream, UdpSocket}, sync::{broadcast, mpsc}};
 use uuid::{uuid, Uuid};
 use serde::{Serialize, Deserialize};
@@ -74,16 +74,20 @@ async fn server() {
 
     let mut clients: HashMap<SocketAddr, Client> = Default::default();
 
-    let (a2s_sender, mut a2s_receiver) = mpsc::channel::<NetworkMessage>(16384);
-    let (s2a_sender, s2a_receiver) = broadcast::channel::<NetworkMessage>(16384);
+    let (tokio_to_game_sender, mut tokio_to_game_receiver) = mpsc::channel::<NetworkMessage>(16384);
+    let (game_to_tokio_sender, game_to_tokio_receiver) = broadcast::channel::<NetworkMessage>(16384);
 
+    let receiver_generator = game_to_tokio_sender.clone();
+    drop(game_to_tokio_receiver);
 
     tokio::spawn(async move {
         loop {
             let (socket, addr) = tcp_listener.accept().await.unwrap();
 
+            info!("Got a connection from {:?}", addr);
+
             let (mut rx_socket, mut tx_socket) = socket.into_split();
-            let sender = a2s_sender.clone();
+            let sender = tokio_to_game_sender.clone();
 
             // receiving from this client
             tokio::spawn(async move {
@@ -105,7 +109,7 @@ async fn server() {
             });
 
             // sending to this client
-            let mut rx = s2a_receiver.resubscribe();
+            let mut rx = receiver_generator.subscribe();
             tokio::spawn(async move {
 
                 loop {
@@ -132,12 +136,13 @@ async fn server() {
 
         // collect all messages, up to a cap so we can't stall
         let mut n_recv = 0;
-        while !a2s_receiver.is_empty() && n_recv < 10000 {
-            if let Ok(data) = a2s_receiver.try_recv() {
+        while !tokio_to_game_receiver.is_empty() && n_recv < 10000 {
+            println!("Trying to receive");
+            if let Ok(data) = tokio_to_game_receiver.try_recv() {
                 match data.packet.message_type {
                     NetworkMessageType::ConnectionRequest => {
                         let conn_acc_msg = server_handle_connect(&mut clients, data.addr);
-                        if let Err(e) = s2a_sender.send(NetworkMessage { addr: data.addr, packet: conn_acc_msg }) {
+                        if let Err(e) = game_to_tokio_sender.send(NetworkMessage { addr: data.addr, packet: conn_acc_msg }) {
                             error!("Could not send message to broadcast queue, might be full: {:?}", e);
                         }
                     },
@@ -163,8 +168,8 @@ async fn client() {
     
     let mut client: Option<Client> = None;
 
-    let (a2s_sender, mut a2s_receiver) = mpsc::channel::<NetworkMessage>(16384);
-    let (s2a_sender, mut s2a_receiver) = mpsc::channel::<NetworkMessage>(16384);
+    let (tokio_to_game_sender, mut tokio_to_game_receiver) = mpsc::channel::<NetworkMessage>(16384);
+    let (game_to_tokio_sender, mut game_to_tokio_receiver) = mpsc::channel::<NetworkMessage>(16384);
 
     let local_addr = tcp_stream.local_addr().unwrap();
     let peer_addr = tcp_stream.peer_addr().unwrap();
@@ -179,7 +184,7 @@ async fn client() {
                 println!("Read n bytes: {:?}", num_bytes);
                 match rmp_serde::from_slice::<NetworkMessagePacket>(&buf[..num_bytes]) {
                     Ok(v) => {
-                        if let Err(e) = a2s_sender.send(NetworkMessage { addr: rx_socket.peer_addr().unwrap(), packet: v }).await {
+                        if let Err(e) = tokio_to_game_sender.send(NetworkMessage { addr: rx_socket.peer_addr().unwrap(), packet: v }).await {
                             error!("Error occurred while trying to pass packet from task, the queue might be full: {:?}", e);
                         }
                     },
@@ -193,7 +198,8 @@ async fn client() {
     tokio::spawn(async move {
 
         loop {
-            if let Some(data) = s2a_receiver.recv().await {
+            if let Some(data) = game_to_tokio_receiver.recv().await {
+                trace!("Writing data: {:?}", data);
                 match rmp_serde::to_vec(&data.packet) {
                     Ok(v) => {
                         if let Err(e) = tx_socket.write_all(v.as_slice()).await {
@@ -205,6 +211,7 @@ async fn client() {
             }
             else {
                 // the channel has been closed, exit
+                trace!("The channel has closed, exiting loop");
                 break;
             }
         }
@@ -212,7 +219,9 @@ async fn client() {
 
 
     let msg = NetworkMessagePacket {message_type: NetworkMessageType::ConnectionRequest, payload: vec![]};
-    let _ = s2a_sender.send(NetworkMessage { addr: peer_addr, packet: msg });
+    if let Err(err) = game_to_tokio_sender.send(NetworkMessage { addr: peer_addr, packet: msg }).await {
+        error!("Failed to send connection package to network thread: {:?}", err);
+    }
 
 
     // NOTE: this would be run once per frame in the update loop
@@ -220,8 +229,9 @@ async fn client() {
 
         // collect all messages, up to a cap so we can't stall
         let mut n_recv = 0;
-        while !a2s_receiver.is_empty() && n_recv < 10000 {
-            if let Ok(data) = a2s_receiver.try_recv() {
+        while !tokio_to_game_receiver.is_empty() && n_recv < 10000 {
+            println!("Trying to receive");
+            if let Ok(data) = tokio_to_game_receiver.try_recv() {
                 match data.packet.message_type {
                     NetworkMessageType::ConnectionAccept => {
                         match client_handle_connect(local_addr, &data.packet) {
@@ -245,6 +255,8 @@ async fn client() {
 #[tokio::main]
 async fn main() {
     pretty_env_logger::init();
+
+    trace!("Starting");
 
     let args: Vec<String> = env::args().collect();
 
