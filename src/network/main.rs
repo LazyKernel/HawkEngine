@@ -163,7 +163,7 @@ fn client_handle_connect(local_addr: SocketAddr, packet: &NetworkMessagePacket) 
 
 async fn client() {
     let tcp_stream = TcpStream::connect("127.0.0.1:6782").await.expect("Could not connect to server");
-    //let mut udp_stream = UdpSocket::bind("0.0.0.0:6782").await.expect("Could not connect to server over UDP");
+    let mut udp_stream = UdpSocket::bind("127.0.0.1:6782").await.expect("Could not connect to server over UDP");
 
     
     let mut client: Option<Client> = None;
