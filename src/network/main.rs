@@ -1,6 +1,6 @@
 use std::{collections::HashMap, env, error::Error, net::SocketAddr, sync::Arc, time::Instant};
 use log::{error, info, log, trace, warn};
-use tokio::{io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt}, net::{tcp, TcpListener, TcpStream, UdpSocket}, sync::{broadcast::{self, Receiver}, futures, mpsc::{self, Sender}}};
+use tokio::{io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt}, net::{tcp::{self, OwnedReadHalf, OwnedWriteHalf}, TcpListener, TcpStream, UdpSocket}, sync::{broadcast::{self, Receiver}, futures, mpsc::{self, Sender}}};
 use uuid::{uuid, Uuid};
 use serde::{Serialize, Deserialize};
 
@@ -15,6 +15,8 @@ enum NetworkMessageType {
     Unknown = 0,
     ConnectionRequest,
     ConnectionAccept,
+    IncrementRequest,
+    IncrementResponse,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -67,13 +69,11 @@ fn server_handle_connect(clients: &mut HashMap<SocketAddr, Client>, addr: Socket
     return conn_acc_msg;
 }
 
-async fn server_read_task(addr: SocketAddr, rx_socket: impl AsyncReadExt, tokio_to_game_sender: mpsc::Sender<NetworkMessage>) {
+async fn server_read_task(addr: SocketAddr, mut rx_socket: OwnedReadHalf, tokio_to_game_sender: mpsc::Sender<NetworkMessage>) {
     let mut buf = [0u8; 512];
 
-    let mut pinned_socket = Box::pin(rx_socket);
-
     loop {
-        match pinned_socket.read(&mut buf[..]).await {
+        match rx_socket.read(&mut buf[..]).await {
             Ok(num_bytes) => {
                 trace!("Read n bytes: {:?}", num_bytes);
                 match rmp_serde::from_slice::<NetworkMessagePacket>(&buf[..num_bytes]) {
@@ -91,9 +91,7 @@ async fn server_read_task(addr: SocketAddr, rx_socket: impl AsyncReadExt, tokio_
 }
 
 
-async fn server_send_task(addr: SocketAddr, tx_socket: impl AsyncWriteExt, mut game_to_tokio_receiver: broadcast::Receiver<NetworkMessage>) {
-    let mut pinned_socket = Box::pin(tx_socket);
-
+async fn server_send_task(addr: SocketAddr, mut tx_socket: OwnedWriteHalf, mut game_to_tokio_receiver: broadcast::Receiver<NetworkMessage>) {
     loop {
         match game_to_tokio_receiver.recv().await {
             Ok(data) => {
@@ -102,7 +100,7 @@ async fn server_send_task(addr: SocketAddr, tx_socket: impl AsyncWriteExt, mut g
                     trace!("Writing data: {:?}", data);
                     match rmp_serde::to_vec(&data.packet) {
                         Ok(v) => {
-                            if let Err(e) = pinned_socket.write_all(v.as_slice()).await {
+                            if let Err(e) = tx_socket.write_all(v.as_slice()).await {
                                 error!("Could not write to socket: {:?}", e);
                             }
                         },
@@ -116,18 +114,43 @@ async fn server_send_task(addr: SocketAddr, tx_socket: impl AsyncWriteExt, mut g
 }
 
 
+async fn server_read_task_udp(addr: SocketAddr, socket: Arc<UdpSocket>, tokio_to_game_sender: mpsc::Sender<NetworkMessage>) {
+    loop {
+        
+    }
+}
+
+async fn server_send_task_udp(addr: SocketAddr, socket: Arc<UdpSocket>, mut game_to_tokio_receiver: broadcast::Receiver<NetworkMessage>) {
+    loop {
+        match game_to_tokio_receiver.recv().await {
+            Ok(data) => {
+
+            },
+            Err(e) => error!("Error receiving data in async task (udp): {:?}", e),
+        }
+    }
+}
+
+
 
 async fn server() {
     let tcp_listener = TcpListener::bind("127.0.0.1:6782").await.unwrap();
     let udp_socket = UdpSocket::bind("0.0.0.0:6782").await.unwrap();
+    let udp_socket_arc = Arc::new(udp_socket);
 
     let mut clients: HashMap<SocketAddr, Client> = Default::default();
 
     let (tokio_to_game_sender, mut tokio_to_game_receiver) = mpsc::channel::<NetworkMessage>(16384);
     let (game_to_tokio_sender, game_to_tokio_receiver) = broadcast::channel::<NetworkMessage>(16384);
 
+    let (tokio_to_game_sender_udp, mut tokio_to_game_receiver_udp) = mpsc::channel::<NetworkMessage>(16384);
+    let (game_to_tokio_sender_udp, game_to_tokio_receiver_udp) = broadcast::channel::<NetworkMessage>(16384);
+
     let receiver_generator = game_to_tokio_sender.clone();
     drop(game_to_tokio_receiver);
+
+    let receiver_generator_udp = game_to_tokio_sender_udp.clone();
+    drop(game_to_tokio_receiver_udp);
 
     tokio::spawn(async move {
         loop {
@@ -138,12 +161,20 @@ async fn server() {
             let (rx_socket, tx_socket) = socket.into_split();
             let sender = tokio_to_game_sender.clone();
 
+            let udp_sock_rx = udp_socket_arc.clone();
+            let udp_sock_tx = udp_socket_arc.clone();
+            let sender_udp = tokio_to_game_sender_udp.clone();
+
             // receiving from this client
-            tokio::spawn(async move { server_read_task(addr, rx_socket, sender) });
+            tokio::spawn(async move { server_read_task(addr, rx_socket, sender).await });
+            tokio::spawn(async move { server_read_task_udp(addr, udp_sock_rx, sender_udp).await });
 
             // sending to this client
             let rx = receiver_generator.subscribe();
-            tokio::spawn(async move { server_send_task(addr, tx_socket, rx) } );
+            let rx_udp = receiver_generator_udp.subscribe();
+            tokio::spawn(async move { server_send_task(addr, tx_socket, rx).await } );
+            tokio::spawn(async move { server_send_task_udp(addr, udp_sock_tx, rx_udp).await });
+
         }
     });
 
@@ -180,42 +211,8 @@ fn client_handle_connect(local_addr: SocketAddr, packet: &NetworkMessagePacket) 
     Ok(Client { addr: local_addr, client_id: accept_data.client_id, last_keep_alive: Instant::now() })
 }
 
-async fn client() {
-    let tcp_stream = TcpStream::connect("127.0.0.1:6782").await.expect("Could not connect to server");
-    let mut udp_stream = UdpSocket::bind("127.0.0.1:6782").await.expect("Could not connect to server over UDP");
 
-    
-    let mut client: Option<Client> = None;
-
-    let (tokio_to_game_sender, mut tokio_to_game_receiver) = mpsc::channel::<NetworkMessage>(16384);
-    let (game_to_tokio_sender, mut game_to_tokio_receiver) = mpsc::channel::<NetworkMessage>(16384);
-
-    let local_addr = tcp_stream.local_addr().unwrap();
-    let peer_addr = tcp_stream.peer_addr().unwrap();
-    let (mut rx_socket, mut tx_socket) = tcp_stream.into_split();
-
-    // receiving from server
-    tokio::spawn(async move {
-        let mut buf = [0u8; 512];
-
-        loop {
-            if let Ok(num_bytes) = rx_socket.read(&mut buf[..]).await {
-                trace!("Read n bytes: {:?}", num_bytes);
-                match rmp_serde::from_slice::<NetworkMessagePacket>(&buf[..num_bytes]) {
-                    Ok(v) => {
-                        if let Err(e) = tokio_to_game_sender.send(NetworkMessage { addr: rx_socket.peer_addr().unwrap(), packet: v }).await {
-                            error!("Error occurred while trying to pass packet from task, the queue might be full: {:?}", e);
-                        }
-                    },
-                    Err(e) => error!("Error parsing received buffer: {:?}", e),
-                }
-            }
-        }
-    });
-
-    // sending to this client
-    tokio::spawn(async move {
-
+async fn client_send_task(mut tx_socket: OwnedWriteHalf, mut game_to_tokio_receiver: mpsc::Receiver<NetworkMessage>) {
         loop {
             if let Some(data) = game_to_tokio_receiver.recv().await {
                 trace!("Writing data: {:?}", data);
@@ -234,7 +231,44 @@ async fn client() {
                 break;
             }
         }
-    });
+}
+
+
+async fn client_read_task(mut rx_socket: OwnedReadHalf, tokio_to_game_sender: mpsc::Sender<NetworkMessage>) {
+        let mut buf = [0u8; 512];
+
+        loop {
+            if let Ok(num_bytes) = rx_socket.read(&mut buf[..]).await {
+                trace!("Read n bytes: {:?}", num_bytes);
+                match rmp_serde::from_slice::<NetworkMessagePacket>(&buf[..num_bytes]) {
+                    Ok(v) => {
+                        if let Err(e) = tokio_to_game_sender.send(NetworkMessage { addr: rx_socket.peer_addr().unwrap(), packet: v }).await {
+                            error!("Error occurred while trying to pass packet from task, the queue might be full: {:?}", e);
+                        }
+                    },
+                    Err(e) => error!("Error parsing received buffer: {:?}", e),
+                }
+            }
+        }
+}
+
+async fn client() {
+    let tcp_stream = TcpStream::connect("127.0.0.1:6782").await.expect("Could not connect to server");
+    let mut udp_stream = UdpSocket::bind("127.0.0.1:6782").await.expect("Could not connect to server over UDP");
+
+    
+    let mut client: Option<Client> = None;
+
+    let (tokio_to_game_sender, mut tokio_to_game_receiver) = mpsc::channel::<NetworkMessage>(16384);
+    let (game_to_tokio_sender, game_to_tokio_receiver) = mpsc::channel::<NetworkMessage>(16384);
+
+    let local_addr = tcp_stream.local_addr().unwrap();
+    let peer_addr = tcp_stream.peer_addr().unwrap();
+    let (rx_socket, tx_socket) = tcp_stream.into_split();
+
+    tokio::spawn(async move { client_send_task(tx_socket, game_to_tokio_receiver).await; });
+
+    tokio::spawn(async move { client_read_task(rx_socket, tokio_to_game_sender).await; });
 
 
     let msg = NetworkMessagePacket {message_type: NetworkMessageType::ConnectionRequest, payload: vec![]};
