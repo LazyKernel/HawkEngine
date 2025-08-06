@@ -1,4 +1,4 @@
-use std::{collections::HashMap, env, error::Error, net::SocketAddr, sync::Arc, time::Instant};
+use std::{collections::HashMap, env, error::Error, io, net::SocketAddr, sync::Arc, time::Instant};
 use log::{error, info, log, trace, warn};
 use tokio::{io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt}, net::{tcp::{self, OwnedReadHalf, OwnedWriteHalf}, TcpListener, TcpStream, UdpSocket}, sync::{broadcast::{self, Receiver}, futures, mpsc::{self, Sender}, RwLock}};
 use uuid::{uuid, Uuid};
@@ -35,6 +35,11 @@ struct NetworkMessage {
 struct ConnectionAccepted {
     client_id: Uuid, 
     server_version: String,
+}
+
+#[derive(Serialize, Deserialize)]
+struct Increment {
+    value: u64
 }
 
 impl Client {
@@ -205,6 +210,8 @@ async fn server() {
     tokio::spawn(async move { server_read_task_udp(clients_ref, udp_sock_rx, tokio_to_game_sender_udp).await });
     tokio::spawn(async move { server_send_task_udp(udp_sock_tx, game_to_tokio_receiver_udp).await });
 
+    let mut inc = 0;
+
     // NOTE: this would be run once per frame in the update loop
     loop {
 
@@ -228,6 +235,28 @@ async fn server() {
             }
 
             n_recv += 1;
+        }
+
+        let mut n_recv_udp = 0;
+        while !tokio_to_game_receiver_udp.is_empty() && n_recv_udp < 10000 {
+            trace!("Trying to receive udp");
+            match tokio_to_game_receiver_udp.try_recv() {
+                Ok(data) => {
+                    match data.packet.message_type {
+                        NetworkMessageType::IncrementRequest => {
+                            let increment_packet = rmp_serde::from_slice::<Increment>(&data.packet.payload).unwrap();
+                            inc += increment_packet.value;
+                            info!("Increment: {:?}", inc);
+                            let msg = build_network_message(NetworkMessageType::IncrementResponse, Some(Increment{value: inc})).expect("Could not serialize ConnectionAccept");
+                            let _ = game_to_tokio_sender_udp.send(NetworkMessage { addr: data.addr, packet: msg }).await;
+                        },
+                        _ => warn!("Unsupported message type: {:?}", data.packet.message_type),
+                    }
+                },
+                Err(e) => error!("Error tryingto receive from tokio (udp): {:?}", e),
+            }
+
+            n_recv_udp += 1;
         }
     }
 }
@@ -356,9 +385,30 @@ async fn client() {
         error!("Failed to send connection package to network thread: {:?}", err);
     }
 
+    let (tx, mut rx) = mpsc::channel::<String>(16);
+
+    tokio::spawn(async move {
+        loop {
+            let mut buffer = String::new();
+            let _ = io::stdin().read_line(&mut buffer);
+            let _ = tx.send(buffer).await;
+        }
+    });
 
     // NOTE: this would be run once per frame in the update loop
     loop {
+
+        while !rx.is_empty() {
+            if let Ok(data) = rx.try_recv() {
+                match u64::from_str_radix(&data.trim(), 10) {
+                    Ok(v) => {
+                        let msg = build_network_message(NetworkMessageType::IncrementRequest, Some(Increment { value: v })).unwrap();
+                        let _ = game_to_tokio_sender_udp.send(NetworkMessage { addr: peer_addr, packet: msg }).await;
+                    },
+                    Err(e) => error!("Could not parse ({:?}) as int: {:?}", data, e),
+                }
+            }
+        }
 
         // collect all messages, up to a cap so we can't stall
         let mut n_recv = 0;
@@ -380,6 +430,24 @@ async fn client() {
             }
 
             n_recv += 1;
+        }
+
+
+        // collect all messages, up to a cap so we can't stall
+        let mut n_recv_udp = 0;
+        while !tokio_to_game_receiver_udp.is_empty() && n_recv_udp < 10000 {
+            println!("Trying to receive");
+            if let Ok(data) = tokio_to_game_receiver_udp.try_recv() {
+                match data.packet.message_type {
+                    NetworkMessageType::IncrementResponse => {
+                        let increment = rmp_serde::from_slice::<Increment>(&data.packet.payload).unwrap();
+                        println!("New increment value: {:?}", increment.value);
+                    },
+                    _ => warn!("Unsupported message type: {:?}", data.packet.message_type),
+                }
+            }
+
+            n_recv_udp += 1;
         }
     }
 }
