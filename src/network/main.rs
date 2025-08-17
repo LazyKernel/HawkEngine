@@ -1,4 +1,4 @@
-use std::{collections::HashMap, env, error::Error, io, net::SocketAddr, sync::Arc, time::Instant};
+use std::{collections::HashMap, env, error::Error, io, net::{IpAddr, SocketAddr}, sync::Arc, time::Instant};
 use log::{error, info, log, trace, warn};
 use tokio::{io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt}, net::{tcp::{self, OwnedReadHalf, OwnedWriteHalf}, TcpListener, TcpStream, UdpSocket}, sync::{broadcast::{self, Receiver}, futures, mpsc::{self, Sender}, RwLock}};
 use uuid::{uuid, Uuid};
@@ -62,14 +62,14 @@ fn build_network_message<T: Serialize>(message_type: NetworkMessageType, payload
     })
 }
 
-async fn server_handle_connect(clients: Arc<RwLock<HashMap<SocketAddr, Client>>>, addr: SocketAddr) -> NetworkMessagePacket {
+async fn server_handle_connect(clients: Arc<RwLock<HashMap<IpAddr, Client>>>, addr: SocketAddr) -> NetworkMessagePacket {
     let client = Client::new(addr);
 
     println!("New client connected with ID: {}", client.client_id);
 
     let conn_acc = ConnectionAccepted {client_id: client.client_id, server_version: "0.0.1".into()};
     let conn_acc_msg = build_network_message(NetworkMessageType::ConnectionAccept, Some(conn_acc)).expect("Could not serialize ConnectionAccept");
-    clients.write().await.insert(addr, client);
+    clients.write().await.insert(addr.ip(), client);
 
     return conn_acc_msg;
 }
@@ -119,7 +119,7 @@ async fn server_send_task(addr: SocketAddr, mut tx_socket: OwnedWriteHalf, mut g
 }
 
 
-async fn server_read_task_udp(clients: Arc<RwLock<HashMap<SocketAddr, Client>>>, socket: Arc<UdpSocket>, tokio_to_game_sender: mpsc::Sender<NetworkMessage>) {
+async fn server_read_task_udp(clients: Arc<RwLock<HashMap<IpAddr, Client>>>, socket: Arc<UdpSocket>, tokio_to_game_sender: mpsc::Sender<NetworkMessage>) {
     let mut buf = [0u8; 512];
 
     loop {
@@ -129,7 +129,7 @@ async fn server_read_task_udp(clients: Arc<RwLock<HashMap<SocketAddr, Client>>>,
                 
                 // ignore if the client isn't connected
                 // TODO: need to encrypt udp traffic at some point 
-                if !clients.read().await.contains_key(&addr) {
+                if !clients.read().await.contains_key(&addr.ip()) {
                     continue;
                 }
 
@@ -170,10 +170,10 @@ async fn server_send_task_udp(socket: Arc<UdpSocket>, mut game_to_tokio_receiver
 
 async fn server() {
     let tcp_listener = TcpListener::bind("127.0.0.1:6782").await.unwrap();
-    let udp_socket = UdpSocket::bind("0.0.0.0:6782").await.unwrap();
+    let udp_socket = UdpSocket::bind("127.0.0.1:6782").await.unwrap();
     let udp_socket_arc = Arc::new(udp_socket);
 
-    let mut clients: Arc<RwLock<HashMap<SocketAddr, Client>>> = Default::default();
+    let mut clients: Arc<RwLock<HashMap<IpAddr, Client>>> = Default::default();
 
     let (tokio_to_game_sender, mut tokio_to_game_receiver) = mpsc::channel::<NetworkMessage>(16384);
     let (game_to_tokio_sender, game_to_tokio_receiver) = broadcast::channel::<NetworkMessage>(16384);
@@ -334,10 +334,10 @@ async fn client_send_task_udp(socket: Arc<UdpSocket>, mut game_to_tokio_receiver
     loop {
         match game_to_tokio_receiver.recv().await {
             Some(data) => {
-                trace!("Writing data to {:?} (udp): {:?}", data.addr, data);
+                trace!("Writing data to {:?} (udp): {:?}", socket.peer_addr(), data);
                 match rmp_serde::to_vec(&data.packet) {
                     Ok(v) => {
-                        if let Err(e) = socket.send_to(v.as_slice(), data.addr).await {
+                        if let Err(e) = socket.send(v.as_slice()).await {
                             error!("Could not write to socket: {:?}", e);
                         }
                     },
@@ -351,7 +351,7 @@ async fn client_send_task_udp(socket: Arc<UdpSocket>, mut game_to_tokio_receiver
 
 async fn client() {
     let tcp_stream = TcpStream::connect("127.0.0.1:6782").await.expect("Could not connect to server");
-    let mut udp_stream = UdpSocket::bind("127.0.0.1:6782").await.expect("Could not connect to server over UDP");
+    let mut udp_stream = UdpSocket::bind("127.0.0.1:0").await.expect("Could not connect to server over UDP");
     let udp_sock_arc = Arc::new(udp_stream);
     
     let mut client: Option<Client> = None;
