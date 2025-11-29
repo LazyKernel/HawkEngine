@@ -18,27 +18,21 @@ use tokio::{
 };
 use uuid::Uuid;
 
-use crate::{ecs::resources::network::NetworkData, network::tokio::server::server_loop};
+use crate::{
+    ecs::resources::network::{MessageType, NetworkData, NetworkPacket},
+    network::tokio::server::server_loop,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-enum NetworkMessageType {
-    Unknown = 0,
-    ConnectionRequest,
-    ConnectionAccept,
-    IncrementRequest,
-    IncrementResponse,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NetworkMessagePacket {
-    message_type: NetworkMessageType,
+pub struct RawNetworkMessagePacket {
+    message_type: MessageType,
     payload: Vec<u8>,
 }
 
 #[derive(Clone, Debug)]
-pub struct NetworkMessage {
+pub struct RawNetworkMessage {
     addr: SocketAddr,
-    packet: NetworkMessagePacket,
+    packet: RawNetworkMessagePacket,
 }
 
 pub struct Client {
@@ -53,8 +47,8 @@ async fn tokio_network_loop(
     addr: IpAddr,
     port: u16,
     server: bool,
-    sender: Sender<NetworkMessageData>,
-    receiver: Receiver<NetworkMessageData>,
+    sender: Sender<NetworkPacket>,
+    receiver: Receiver<NetworkPacket>,
 ) {
     if server {
         server_loop(addr, port, sender, receiver).await;
@@ -64,8 +58,8 @@ async fn tokio_network_loop(
 }
 
 pub fn start_network_thread(address: &str, port: u16, server: bool) -> Option<NetworkData> {
-    let (a2s_sender, a2s_receiver) = mpsc::channel::<NetworkMessageData>(16384);
-    let (s2a_sender, s2a_receiver) = mpsc::channel::<NetworkMessageData>(16384);
+    let (a2s_sender, a2s_receiver) = mpsc::channel::<NetworkPacket>(16384);
+    let (s2a_sender, s2a_receiver) = mpsc::channel::<NetworkPacket>(16384);
 
     let addr_parsed = address.parse::<IpAddr>();
 

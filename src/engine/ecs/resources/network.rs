@@ -1,31 +1,35 @@
-use std::{net::SocketAddr, collections::HashMap};
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use specs::Entity;
-use tokio::sync::mpsc::{Sender, Receiver};
+use std::{collections::HashMap, net::SocketAddr};
+use tokio::sync::mpsc::{Receiver, Sender};
 use uuid::Uuid;
 
-
-pub struct NetworkMessageData {
-    pub addr: SocketAddr,
-    pub packet: NetworkPacket
-}
-
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum MessageType {
+    Unknown,
+    ConnectionRequest,
+    ConnectionAccept,
     ComponentTransform,
-    ComponentCustom(String)
+    ComponentCustom(String),
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Copy, Serialize, Deserialize)]
+pub enum NetworkProtocol {
+    TCP,
+    UDP,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
 pub struct NetworkPacket {
     pub net_id: Uuid,
     pub message_type: MessageType,
-    pub data: Vec<u8>
+    pub protocol: NetworkProtocol,
+    pub data: Vec<u8>,
 }
 
 pub struct NetworkData {
-    pub sender: Sender<NetworkMessageData>,
-    pub receiver: Receiver<NetworkMessageData>,
+    pub sender: Sender<NetworkPacket>,
+    pub receiver: Receiver<NetworkPacket>,
     pub target_addr: SocketAddr,
-    pub net_id_ent: HashMap<Uuid, Entity>
+    pub net_id_ent: HashMap<Uuid, Entity>,
 }
