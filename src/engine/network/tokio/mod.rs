@@ -20,7 +20,7 @@ use uuid::Uuid;
 
 use crate::{
     ecs::resources::network::{MessageType, NetworkData, NetworkPacket},
-    network::tokio::server::server_loop,
+    network::tokio::{client::client_loop, server::server_loop},
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -11,6 +11,7 @@ pub enum MessageType {
     ConnectionAccept,
     ComponentTransform,
     ComponentCustom(String),
+    ChatMessage,
 }
 
 #[derive(Clone, Copy, Serialize, Deserialize)]

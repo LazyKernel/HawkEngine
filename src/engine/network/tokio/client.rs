@@ -6,7 +6,10 @@ use std::{net::SocketAddr, sync::Arc};
 use log::{error, info, trace, warn};
 use uuid::Uuid;
 
-use crate::network::tokio::{Client, NetworkMessageType};
+use crate::ecs::resources::network::NetworkProtocol;
+use crate::network::tokio::{
+    Client, NetworkMessageType, RawNetworkMessage, RawNetworkMessagePacket,
+};
 use crate::network::{constants::UDP_BUF_SIZE, tokio::NetworkMessagePacket};
 use crate::{
     ecs::resources::network::{NetworkData, NetworkMessageData, NetworkPacket},
@@ -192,6 +195,7 @@ pub async fn client_loop(
                             .send(NetworkPacket {
                                 net_id: c.client_id,
                                 message_type: data.packet.message_type,
+                                protocol: NetworkProtocol::TCP,
                                 data: data.packet.payload,
                             })
                             .await;
@@ -214,6 +218,7 @@ pub async fn client_loop(
                             .send(NetworkPacket {
                                 net_id: c.client_id,
                                 message_type: data.packet.message_type,
+                                protocol: NetworkProtocol::UDP,
                                 data: data.packet.payload,
                             })
                             .await;
@@ -225,6 +230,35 @@ pub async fn client_loop(
             n_recv_udp += 1;
         }
 
-        // TODO: pass data from receivers to senders
+        while !receiver.is_empty() {
+            trace!("sending our data");
+            match receiver.try_recv() {
+                Ok(packet) => {
+                    match packet.protocol {
+                        NetworkProtocol::TCP => {
+                            game_to_tokio_sender.send(RawNetworkMessage {
+                                addr: peer_addr,
+                                packet: RawNetworkMessagePacket {
+                                    message_type: packet.message_type,
+                                    payload: packet.data,
+                                },
+                            });
+                        }
+                        NetworkProtocol::UDP => {
+                            game_to_tokio_sender_udp
+                                .send(RawNetworkMessage {
+                                    addr: peer_addr,
+                                    packet: RawNetworkMessagePacket {
+                                        message_type: packet.message_type,
+                                        payload: packet.data,
+                                    },
+                                })
+                                .await;
+                        }
+                    };
+                }
+                Err(e) => error!("Error trying to receive data to send out: {:?}", e),
+            }
+        }
     }
 }

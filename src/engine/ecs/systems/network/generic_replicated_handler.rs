@@ -1,11 +1,14 @@
-use log::{warn, error};
-use specs::{System, ReadStorage, Read, Join};
+use log::{error, warn};
+use specs::{Join, Read, ReadStorage, System};
 
-use crate::ecs::{components::{general::Transform, network::NetworkReplicated}, resources::network::{MessageType, NetworkData, NetworkMessageData, NetworkPacket}};
+use crate::ecs::{
+    components::{general::Transform, network::NetworkReplicated},
+    resources::network::{MessageType, NetworkData, NetworkPacket, NetworkProtocol},
+};
 
 /// Handler for generic replicated components
 /// Responsible for converting Transform updates to network messages
-/// 
+///
 
 pub struct GenericHandler;
 
@@ -13,15 +16,15 @@ impl<'a> System<'a> for GenericHandler {
     type SystemData = (
         ReadStorage<'a, NetworkReplicated>,
         ReadStorage<'a, Transform>,
-        Option<Read<'a, NetworkData>>
+        Option<Read<'a, NetworkData>>,
     );
 
     fn run(&mut self, (network_replicated, transform, network_data): Self::SystemData) {
         let net_data = match network_data {
             Some(v) => v,
             None => {
-                warn!("No network data, cannot use networking.");
-                return
+                warn!("No network data struct, cannot use networking.");
+                return;
             }
         };
 
@@ -33,23 +36,18 @@ impl<'a> System<'a> for GenericHandler {
 
             match rmp_serde::to_vec(&t) {
                 Ok(v) => {
-                    let message = NetworkMessageData {
-                        addr: net_data.target_addr,
-                        packet: NetworkPacket {
-                            net_id: net_rep.net_id,
-                            message_type: MessageType::ComponentTransform,
-                            data: v 
-                        }
+                    let message = NetworkPacket {
+                        net_id: net_rep.net_id,
+                        message_type: MessageType::ComponentTransform,
+                        data: v,
+                        protocol: NetworkProtocol::UDP,
                     };
 
                     // its fine to not await here for now
                     net_data.sender.send(message);
-                },
-                Err(e) => error!("Could not serialize transform: {e}")
+                }
+                Err(e) => error!("Could not serialize transform: {e}"),
             };
         }
-
-
-        
     }
 }

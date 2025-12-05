@@ -206,7 +206,8 @@ pub async fn server_loop(
             trace!("Trying to receive");
             match tokio_to_game_receiver.try_recv() {
                 Ok(data) => {
-                    let client = clients.read().await.get(&data.addr.ip());
+                    let clients_read = clients.read().await;
+                    let client = clients_read.get(&data.addr.ip());
                     match client {
                         Some(c) => {
                             sender
@@ -232,7 +233,8 @@ pub async fn server_loop(
             trace!("Trying to receive udp");
             match tokio_to_game_receiver_udp.try_recv() {
                 Ok(data) => {
-                    let client = clients.read().await.get(&data.addr.ip());
+                    let clients_read = clients.read().await;
+                    let client = clients_read.get(&data.addr.ip());
                     match client {
                         Some(c) => {
                             sender
