@@ -13,21 +13,22 @@
 mod data_structures;
 pub mod ecs;
 mod graphics;
-mod physics;
 mod network;
+mod physics;
 mod shaders;
 
-pub use graphics::window::WindowState;
 pub use graphics::renderer::Renderer;
+pub use graphics::window::WindowState;
 
-use ecs::ECS;
 use ecs::systems::general::PlayerInput;
 use ecs::systems::physics::Physics;
 use ecs::systems::render::Render;
+use ecs::ECS;
 use log::trace;
-use specs::{DispatcherBuilder, Dispatcher};
+use specs::{Dispatcher, DispatcherBuilder};
 use winit::event_loop::EventLoop;
 
+use crate::network::tokio::start_network_thread;
 
 pub type PostInitFn = fn(&mut HawkEngine<'_>);
 
@@ -35,7 +36,7 @@ pub struct HawkEngine<'a> {
     pub renderer: Option<Renderer>,
 
     pub ecs: ECS,
-    dispatchers: Vec<Dispatcher<'a,'a>>,
+    dispatchers: Vec<Dispatcher<'a, 'a>>,
 
     post_init_functions: Vec<PostInitFn>,
 }
@@ -46,8 +47,11 @@ impl<'a> HawkEngine<'a> {
     */
     pub fn new(use_physics: bool) -> Self {
         match pretty_env_logger::try_init() {
-            Ok(_) => {},
-            Err(e) => trace!("Failed to init pretty_env_logger, probably already initialized: {:?}", e)
+            Ok(_) => {}
+            Err(e) => trace!(
+                "Failed to init pretty_env_logger, probably already initialized: {:?}",
+                e
+            ),
         }
 
         // Create ECS classes
@@ -61,7 +65,7 @@ impl<'a> HawkEngine<'a> {
 
         let dispatcher = dbuilder
             // Using thread_local for player input for a couple of reasons
-            // 1. it's probably a good idea to have the camera view be updated 
+            // 1. it's probably a good idea to have the camera view be updated
             //    in a single thread while there are no other updates going on
             //    which have a chance of using its value
             // 2. the whole program hangs when trying to set cursor grab on windows
@@ -74,7 +78,12 @@ impl<'a> HawkEngine<'a> {
             .build();
         let dispatchers = vec![dispatcher];
 
-        return Self { renderer: None, ecs, dispatchers, post_init_functions: vec![] };
+        return Self {
+            renderer: None,
+            ecs,
+            dispatchers,
+            post_init_functions: vec![],
+        };
     }
 
     pub fn add_dispatcher(&mut self, dispatcher: Dispatcher<'a, 'a>) {
@@ -88,10 +97,16 @@ impl<'a> HawkEngine<'a> {
     pub fn set_renderer(&mut self, renderer: Renderer) {
         renderer.setup_engine(self);
         self.renderer = Some(renderer);
-        self.post_init_functions.clone().into_iter().for_each(|x| x(self));
+        self.post_init_functions
+            .clone()
+            .into_iter()
+            .for_each(|x| x(self));
+    }
+
+    pub fn start_networking(&mut self, address: &str, port: u16, server: bool) {
+        start_network_thread(address, port, server);
     }
 }
-
 
 pub fn start_engine(engine: HawkEngine<'static>, event_loop: EventLoop<()>) {
     // look into this when rendering https://www.reddit.com/r/vulkan/comments/e7n5b6/drawing_multiple_objects/

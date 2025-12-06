@@ -39,6 +39,7 @@ uuid = { version = "1.4.1", features = ["serde", "v4"] }
 vulkano = "0.35"
 vulkano-shaders = { version = "0.35", features = ["shaderc-build-from-source"] }
 winit = "0.30"
+argh = "0.1.13"
 
 [profile.dev]
 opt-level = 1 
