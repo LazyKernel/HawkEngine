@@ -9,6 +9,7 @@ pub enum MessageType {
     Unknown,
     ConnectionRequest,
     ConnectionAccept,
+    ConnectionKeepAlive,
     ComponentTransform,
     ComponentCustom(String),
     ChatMessage,
@@ -29,6 +30,7 @@ pub struct NetworkPacket {
 }
 
 pub struct NetworkData {
+    pub is_server: bool,
     pub sender: Sender<NetworkPacket>,
     pub receiver: Receiver<NetworkPacket>,
     pub target_addr: SocketAddr,

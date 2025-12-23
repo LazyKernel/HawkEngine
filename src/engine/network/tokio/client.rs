@@ -7,14 +7,9 @@ use log::{error, info, trace, warn};
 use uuid::Uuid;
 
 use crate::ecs::resources::network::NetworkProtocol;
-use crate::network::tokio::{
-    Client, NetworkMessageType, RawNetworkMessage, RawNetworkMessagePacket,
-};
-use crate::network::{constants::UDP_BUF_SIZE, tokio::NetworkMessagePacket};
-use crate::{
-    ecs::resources::network::{NetworkData, NetworkMessageData, NetworkPacket},
-    network::tokio::NetworkMessage,
-};
+use crate::ecs::resources::network::{NetworkData, NetworkPacket};
+use crate::network::constants::UDP_BUF_SIZE;
+use crate::network::tokio::{Client, RawNetworkMessage, RawNetworkMessagePacket};
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
     net::{
@@ -31,7 +26,7 @@ use tokio::{
 
 async fn client_send_task(
     mut tx_socket: OwnedWriteHalf,
-    mut game_to_tokio_receiver: mpsc::Receiver<NetworkMessage>,
+    mut game_to_tokio_receiver: mpsc::Receiver<RawNetworkMessage>,
 ) {
     loop {
         if let Some(data) = game_to_tokio_receiver.recv().await {
@@ -54,17 +49,17 @@ async fn client_send_task(
 
 async fn client_read_task(
     mut rx_socket: OwnedReadHalf,
-    tokio_to_game_sender: mpsc::Sender<NetworkMessage>,
+    tokio_to_game_sender: mpsc::Sender<RawNetworkMessage>,
 ) {
     let mut buf = [0u8; 512];
 
     loop {
         if let Ok(num_bytes) = rx_socket.read(&mut buf[..]).await {
             trace!("Read n bytes: {:?}", num_bytes);
-            match rmp_serde::from_slice::<NetworkMessagePacket>(&buf[..num_bytes]) {
+            match rmp_serde::from_slice::<RawNetworkMessagePacket>(&buf[..num_bytes]) {
                 Ok(v) => {
                     if let Err(e) = tokio_to_game_sender
-                        .send(NetworkMessage {
+                        .send(RawNetworkMessage {
                             addr: rx_socket.peer_addr().unwrap(),
                             packet: v,
                         })
@@ -82,7 +77,7 @@ async fn client_read_task(
 async fn client_read_task_udp(
     addr: SocketAddr,
     socket: Arc<UdpSocket>,
-    tokio_to_game_sender: mpsc::Sender<NetworkMessage>,
+    tokio_to_game_sender: mpsc::Sender<RawNetworkMessage>,
 ) {
     let mut buf = [0u8; 512];
 
@@ -91,10 +86,10 @@ async fn client_read_task_udp(
             Ok(num_bytes) => {
                 trace!("Read n bytes: {:?}", num_bytes);
 
-                match rmp_serde::from_slice::<NetworkMessagePacket>(&buf[..num_bytes]) {
+                match rmp_serde::from_slice::<RawNetworkMessagePacket>(&buf[..num_bytes]) {
                     Ok(v) => {
                         if let Err(e) = tokio_to_game_sender
-                            .send(NetworkMessage {
+                            .send(RawNetworkMessage {
                                 addr: addr,
                                 packet: v,
                             })
@@ -113,7 +108,7 @@ async fn client_read_task_udp(
 
 async fn client_send_task_udp(
     socket: Arc<UdpSocket>,
-    mut game_to_tokio_receiver: mpsc::Receiver<NetworkMessage>,
+    mut game_to_tokio_receiver: mpsc::Receiver<RawNetworkMessage>,
 ) {
     loop {
         match game_to_tokio_receiver.recv().await {
@@ -149,13 +144,14 @@ pub async fn client_loop(
 
     let mut client: Option<Client> = None;
 
-    let (tokio_to_game_sender, mut tokio_to_game_receiver) = mpsc::channel::<NetworkMessage>(16384);
-    let (game_to_tokio_sender, game_to_tokio_receiver) = mpsc::channel::<NetworkMessage>(16384);
+    let (tokio_to_game_sender, mut tokio_to_game_receiver) =
+        mpsc::channel::<RawNetworkMessage>(16384);
+    let (game_to_tokio_sender, game_to_tokio_receiver) = mpsc::channel::<RawNetworkMessage>(16384);
 
     let (tokio_to_game_sender_udp, mut tokio_to_game_receiver_udp) =
-        mpsc::channel::<NetworkMessage>(16384);
+        mpsc::channel::<RawNetworkMessage>(16384);
     let (game_to_tokio_sender_udp, game_to_tokio_receiver_udp) =
-        mpsc::channel::<NetworkMessage>(16384);
+        mpsc::channel::<RawNetworkMessage>(16384);
 
     let local_addr = tcp_stream.local_addr().unwrap();
     let peer_addr = tcp_stream.peer_addr().unwrap();
@@ -189,7 +185,7 @@ pub async fn client_loop(
         while !tokio_to_game_receiver.is_empty() && n_recv < 10000 {
             println!("Trying to receive");
             if let Ok(data) = tokio_to_game_receiver.try_recv() {
-                match client {
+                match &client {
                     Some(c) => {
                         sender
                             .send(NetworkPacket {
@@ -212,7 +208,7 @@ pub async fn client_loop(
         while !tokio_to_game_receiver_udp.is_empty() && n_recv_udp < 10000 {
             println!("Trying to receive udp");
             if let Ok(data) = tokio_to_game_receiver_udp.try_recv() {
-                match client {
+                match &client {
                     Some(c) => {
                         sender
                             .send(NetworkPacket {

@@ -93,5 +93,6 @@ pub fn start_network_thread(address: &str, port: u16, server: bool) -> Option<Ne
         receiver: a2s_receiver,
         target_addr: (addr_ok, port).into(),
         net_id_ent: HashMap::new(),
+        is_server: server,
     });
 }
