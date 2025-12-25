@@ -3,9 +3,10 @@ mod server;
 
 use std::{
     collections::HashMap,
-    net::{IpAddr, SocketAddr},
+    net::{IpAddr, Ipv4Addr, SocketAddr},
     sync::Arc,
     thread,
+    time::{Duration, Instant},
 };
 
 use log::error;
@@ -14,7 +15,6 @@ use tokio::{
     net::UdpSocket,
     runtime::Runtime,
     sync::mpsc::{self, Receiver, Sender},
-    time::Instant,
 };
 use uuid::Uuid;
 
@@ -36,9 +36,9 @@ pub struct RawNetworkMessage {
 }
 
 pub struct Client {
-    client_id: Uuid,
-    addr: SocketAddr,
-    last_keep_alive: Instant,
+    pub client_id: Uuid,
+    pub addr: SocketAddr,
+    pub last_keep_alive: Instant,
 }
 
 /// If server is true, will use many-to-one style connection
@@ -94,5 +94,10 @@ pub fn start_network_thread(address: &str, port: u16, server: bool) -> Option<Ne
         target_addr: (addr_ok, port).into(),
         net_id_ent: HashMap::new(),
         is_server: server,
+        player_list: HashMap::new(),
+        player_self: None,
+        server_last_keep_alive: Instant::now(),
+        client_connection_tried_last: Instant::now() - Duration::from_secs(10),
+        local_addr: (Ipv4Addr::new(127, 0, 0, 1), port).into(),
     });
 }

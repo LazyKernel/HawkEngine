@@ -1,3 +1,4 @@
+use argh::FromArgs;
 use engine::{
     ecs::{
         components::{
@@ -8,7 +9,7 @@ use engine::{
         utils::objects::create_terrain,
     },
     start_engine, HawkEngine,
-;
+};
 use log::error;
 use nalgebra::Vector3;
 use rapier3d::{
@@ -145,11 +146,17 @@ fn init(engine: &mut HawkEngine) {
 }
 
 #[derive(FromArgs)]
+/// HawkEngine
 struct GameArgs {
+    /// is this a server
     #[argh(switch, short = 's')]
     server: bool,
+
+    /// host name to connect to or bind to
     #[argh(option)]
     host: Option<String>,
+
+    /// port to connect to or bind to
     #[argh(option)]
     port: Option<u16>,
 }
@@ -161,17 +168,17 @@ fn main() {
 
     engine.add_post_init_fn(init);
 
-    if server {
+    if args.server {
         engine.start_networking(
-            args.host.unwrap_or("0.0.0.0".into()).into(),
+            &*args.host.unwrap_or("0.0.0.0".into()),
             args.port.unwrap_or(6742),
             true,
         );
     } else if args.host.is_some() && args.port.is_some() {
         engine.start_networking(
-            args.host
-                .expect("we just checked that args.host is something")
-                .into(),
+            &*args
+                .host
+                .expect("we just checked that args.host is something"),
             args.port.expect("we just checked args.port is something"),
             false,
         );

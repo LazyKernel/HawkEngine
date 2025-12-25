@@ -41,6 +41,7 @@ impl<'a> System<'a> for GenericHandler {
                         message_type: MessageType::ComponentTransform,
                         data: v,
                         protocol: NetworkProtocol::UDP,
+                        ..Default::default()
                     };
 
                     // its fine to not await here for now

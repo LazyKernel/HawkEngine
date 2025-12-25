@@ -213,6 +213,7 @@ pub async fn server_loop(
                             sender
                                 .send(NetworkPacket {
                                     net_id: c.client_id,
+                                    addr: Some(data.addr),
                                     message_type: data.packet.message_type,
                                     protocol: NetworkProtocol::TCP,
                                     data: data.packet.payload,
@@ -240,6 +241,7 @@ pub async fn server_loop(
                             sender
                                 .send(NetworkPacket {
                                     net_id: c.client_id,
+                                    addr: Some(data.addr),
                                     message_type: data.packet.message_type,
                                     protocol: NetworkProtocol::UDP,
                                     data: data.packet.payload,

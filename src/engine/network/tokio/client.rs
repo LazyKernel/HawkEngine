@@ -6,7 +6,7 @@ use std::{net::SocketAddr, sync::Arc};
 use log::{error, info, trace, warn};
 use uuid::Uuid;
 
-use crate::ecs::resources::network::NetworkProtocol;
+use crate::ecs::resources::network::{MessageType, NetworkProtocol};
 use crate::ecs::resources::network::{NetworkData, NetworkPacket};
 use crate::network::constants::UDP_BUF_SIZE;
 use crate::network::tokio::{Client, RawNetworkMessage, RawNetworkMessagePacket};
@@ -190,6 +190,7 @@ pub async fn client_loop(
                         sender
                             .send(NetworkPacket {
                                 net_id: c.client_id,
+                                addr: Some(data.addr),
                                 message_type: data.packet.message_type,
                                 protocol: NetworkProtocol::TCP,
                                 data: data.packet.payload,
@@ -213,6 +214,7 @@ pub async fn client_loop(
                         sender
                             .send(NetworkPacket {
                                 net_id: c.client_id,
+                                addr: Some(data.addr),
                                 message_type: data.packet.message_type,
                                 protocol: NetworkProtocol::UDP,
                                 data: data.packet.payload,
