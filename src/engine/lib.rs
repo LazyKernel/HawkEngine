@@ -24,11 +24,14 @@ use ecs::systems::general::PlayerInput;
 use ecs::systems::physics::Physics;
 use ecs::systems::render::Render;
 use ecs::ECS;
-use log::trace;
-use specs::{Dispatcher, DispatcherBuilder};
+use log::{trace, warn};
+use specs::{Dispatcher, DispatcherBuilder, WorldExt};
 use winit::event_loop::EventLoop;
 
-use crate::network::tokio::start_network_thread;
+use crate::{
+    ecs::systems::network::connection_handler::ConnectionHandler,
+    network::tokio::start_network_thread,
+};
 
 pub type PostInitFn = fn(&mut HawkEngine<'_>);
 
@@ -104,7 +107,15 @@ impl<'a> HawkEngine<'a> {
     }
 
     pub fn start_networking(&mut self, address: &str, port: u16, server: bool) {
-        start_network_thread(address, port, server);
+        match start_network_thread(address, port, server) {
+            Some(netdata) => self.ecs.world.insert(netdata),
+            None => warn!("Network data received from start_network_thread was None"),
+        }
+
+        let mut dbuilder = DispatcherBuilder::new();
+        dbuilder.add(ConnectionHandler, "connection_handler", &[]);
+        let network_dispatch = dbuilder.build();
+        self.add_dispatcher(network_dispatch);
     }
 }
 

@@ -157,6 +157,7 @@ struct GameArgs {
     host: Option<String>,
 
     /// port to connect to or bind to
+    /// udp will use port + 1
     #[argh(option)]
     port: Option<u16>,
 }

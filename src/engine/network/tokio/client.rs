@@ -137,9 +137,10 @@ pub async fn client_loop(
     let tcp_stream = TcpStream::connect((addr, port))
         .await
         .expect("Could not connect to server");
-    let mut udp_stream = UdpSocket::bind((addr, port))
+    let mut udp_stream = UdpSocket::bind("127.0.0.1:0")
         .await
         .expect("Could not connect to server over UDP");
+    let _ = udp_stream.connect((addr, port + 1)).await;
     let udp_sock_arc = Arc::new(udp_stream);
 
     let mut client: Option<Client> = None;

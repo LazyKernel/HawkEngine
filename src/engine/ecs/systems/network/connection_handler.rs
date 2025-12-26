@@ -3,7 +3,7 @@ use std::{
     time::{self, Instant, SystemTime},
 };
 
-use log::{error, warn};
+use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
 use specs::{Join, Read, ReadStorage, System, Write};
 use uuid::{timestamp::UUID_TICKS_BETWEEN_EPOCHS, Uuid};
@@ -122,11 +122,22 @@ impl<'a> System<'a> for ConnectionHandler {
                     }
                     MessageType::ConnectionAccept => {
                         if !net_data.is_server {
-                            net_data.player_self = Some(Client {
-                                client_id: todo!(),
-                                addr: net_data.local_addr,
-                                last_keep_alive: Instant::now(),
-                            });
+                            match rmp_serde::from_slice::<ConnectionAcceptData>(&v.data) {
+                                Ok(acc) => {
+                                    info!("We got assigned {:?}", acc.uuid);
+                                    net_data.player_self = Some(Client {
+                                        client_id: acc.uuid,
+                                        addr: net_data.local_addr,
+                                        last_keep_alive: Instant::now(),
+                                    });
+                                }
+                                Err(e) => {
+                                    error!(
+                                        "Could not parse ConnectionAcceptData on client: {:?}",
+                                        e
+                                    );
+                                }
+                            }
                         } else {
                             warn!("Server somehow got a ConnectionAccept packet???");
                         }

@@ -151,7 +151,7 @@ pub async fn server_loop(
     mut receiver: Receiver<NetworkPacket>,
 ) {
     let tcp_listener = TcpListener::bind((addr, port)).await.unwrap();
-    let udp_socket = UdpSocket::bind((addr, port)).await.unwrap();
+    let udp_socket = UdpSocket::bind((addr, port + 1)).await.unwrap();
     let udp_socket_arc = Arc::new(udp_socket);
 
     let mut clients: Arc<RwLock<HashMap<IpAddr, Client>>> = Default::default();
@@ -175,6 +175,12 @@ pub async fn server_loop(
             let (socket, addr) = tcp_listener.accept().await.unwrap();
 
             info!("Got a connection from {:?}", addr);
+
+            let mut clients_mut = clients.write_owned().await;
+            // FIXME: connection handling, uuid accepting needs to be handled at this level
+            // info about connection packets can be propagated up too, but main logic stays down
+            // here
+            clients_mut.insert(addr, Client { client_id: None, addr: (), last_keep_alive: () })
 
             let (rx_socket, tx_socket) = socket.into_split();
             let sender = tokio_to_game_sender.clone();
