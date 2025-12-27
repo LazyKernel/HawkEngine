@@ -3,13 +3,15 @@ use std::{net::SocketAddr, sync::Arc};
 
 use log::{error, trace};
 
-use crate::ecs::resources::network::NetworkProtocol;
+use crate::ecs::resources::network::{MessageType, NetworkProtocol};
 use crate::ecs::resources::network::{NetworkPacketIn, NetworkPacketOut};
+use crate::ecs::systems::network::connection_handler::ConnectionAcceptData;
 use crate::network::tokio::{Client, RawNetworkMessage, RawNetworkMessagePacket};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{
-        tcp::{OwnedReadHalf, OwnedWriteHalf}, TcpStream, UdpSocket,
+        tcp::{OwnedReadHalf, OwnedWriteHalf},
+        TcpStream, UdpSocket,
     },
     sync::mpsc::{self, Receiver, Sender},
 };
@@ -133,7 +135,7 @@ pub async fn client_loop(
     let _ = udp_stream.connect((addr, port + 1)).await;
     let udp_sock_arc = Arc::new(udp_stream);
 
-    let client: Option<Client> = None;
+    let mut client: Client = Default::default();
 
     let (tokio_to_game_sender, mut tokio_to_game_receiver) =
         mpsc::channel::<RawNetworkMessage>(16384);
@@ -176,18 +178,31 @@ pub async fn client_loop(
         while !tokio_to_game_receiver.is_empty() && n_recv < 10000 {
             println!("Trying to receive");
             if let Ok(data) = tokio_to_game_receiver.try_recv() {
-                match &client {
-                    Some(c) => {
-                        sender
-                            .send(NetworkPacketIn {
-                                client: c.clone(),
-                                message_type: data.packet.message_type,
-                                protocol: NetworkProtocol::TCP,
-                                data: data.packet.payload,
-                            })
-                            .await;
+                // NOTE: grabbing our assigned client id here, not ideal
+                if data.packet.message_type == MessageType::ConnectionAccept {
+                    match rmp_serde::from_slice::<ConnectionAcceptData>(&data.packet.payload) {
+                        Ok(data) => {
+                            client = Client {
+                                client_id: data.uuid,
+                                addr: local_addr,
+                            };
+                        }
+                        Err(e) => {
+                            error!("Could not deserialize ConnectionAcceptData: {:?}", e);
+                        }
                     }
-                    None => error!("Receiving data before knowing who we are"),
+                }
+
+                if let Err(e) = sender
+                    .send(NetworkPacketIn {
+                        client: client.clone(),
+                        message_type: data.packet.message_type,
+                        protocol: NetworkProtocol::TCP,
+                        data: data.packet.payload,
+                    })
+                    .await
+                {
+                    error!("Could not pass packet to game: {:?}", e);
                 }
             }
 
@@ -199,18 +214,16 @@ pub async fn client_loop(
         while !tokio_to_game_receiver_udp.is_empty() && n_recv_udp < 10000 {
             println!("Trying to receive udp");
             if let Ok(data) = tokio_to_game_receiver_udp.try_recv() {
-                match &client {
-                    Some(c) => {
-                        sender
-                            .send(NetworkPacketIn {
-                                client: c.clone(),
-                                message_type: data.packet.message_type,
-                                protocol: NetworkProtocol::UDP,
-                                data: data.packet.payload,
-                            })
-                            .await;
-                    }
-                    None => error!("Receiving udp data before knowing who we are"),
+                if let Err(e) = sender
+                    .send(NetworkPacketIn {
+                        client: client.clone(),
+                        message_type: data.packet.message_type,
+                        protocol: NetworkProtocol::UDP,
+                        data: data.packet.payload,
+                    })
+                    .await
+                {
+                    error!("Could not pass udp packet to game: {:?}", e);
                 }
             }
 
@@ -223,16 +236,7 @@ pub async fn client_loop(
                 Ok(packet) => {
                     match packet.protocol {
                         NetworkProtocol::TCP => {
-                            game_to_tokio_sender.send(RawNetworkMessage {
-                                addr: peer_addr,
-                                packet: RawNetworkMessagePacket {
-                                    message_type: packet.message_type,
-                                    payload: packet.data,
-                                },
-                            });
-                        }
-                        NetworkProtocol::UDP => {
-                            game_to_tokio_sender_udp
+                            if let Err(e) = game_to_tokio_sender
                                 .send(RawNetworkMessage {
                                     addr: peer_addr,
                                     packet: RawNetworkMessagePacket {
@@ -240,7 +244,24 @@ pub async fn client_loop(
                                         payload: packet.data,
                                     },
                                 })
-                                .await;
+                                .await
+                            {
+                                error!("Could not pass raw tcp packet to tokio: {:?}", e);
+                            }
+                        }
+                        NetworkProtocol::UDP => {
+                            if let Err(e) = game_to_tokio_sender_udp
+                                .send(RawNetworkMessage {
+                                    addr: peer_addr,
+                                    packet: RawNetworkMessagePacket {
+                                        message_type: packet.message_type,
+                                        payload: packet.data,
+                                    },
+                                })
+                                .await
+                            {
+                                error!("Could not pass raw udp packet to tokio: {:?}", e);
+                            }
                         }
                     };
                 }

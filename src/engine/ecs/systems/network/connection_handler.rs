@@ -6,19 +6,21 @@ use specs::{System, Write};
 use uuid::Uuid;
 
 use crate::{
-    ecs::resources::network::{MessageType, NetworkData, NetworkPacketOut, NetworkProtocol, Player},
+    ecs::resources::network::{
+        MessageType, NetworkData, NetworkPacketOut, NetworkProtocol, Player,
+    },
     network::constants::KEEP_ALIVE_INTERVAL,
 };
 
 #[derive(Serialize, Deserialize)]
-struct ConnectionAcceptData {
-    uuid: Uuid,
+pub struct ConnectionAcceptData {
+    pub uuid: Uuid,
 }
 
 #[derive(Serialize, Deserialize)]
 struct NewClientData {
-    name: String,
-    uuid: Uuid,
+    pub name: String,
+    pub uuid: Uuid,
 }
 
 // Starts and keeps the connection alive

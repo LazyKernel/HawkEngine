@@ -3,7 +3,7 @@ mod server;
 
 use std::{
     collections::HashMap,
-    net::{IpAddr, Ipv4Addr, SocketAddr},
+    net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4},
     thread,
     time::{Duration, Instant},
 };
@@ -37,6 +37,15 @@ pub struct RawNetworkMessage {
 pub struct Client {
     pub client_id: Uuid,
     pub addr: SocketAddr,
+}
+
+impl Default for Client {
+    fn default() -> Self {
+        Client {
+            client_id: Uuid::nil(),
+            addr: SocketAddrV4::new(0.into(), 0).into(),
+        }
+    }
 }
 
 /// If server is true, will use many-to-one style connection
