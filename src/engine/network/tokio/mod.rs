@@ -4,7 +4,6 @@ mod server;
 use std::{
     collections::HashMap,
     net::{IpAddr, Ipv4Addr, SocketAddr},
-    sync::Arc,
     thread,
     time::{Duration, Instant},
 };
@@ -12,7 +11,6 @@ use std::{
 use log::error;
 use serde::{Deserialize, Serialize};
 use tokio::{
-    net::UdpSocket,
     runtime::Runtime,
     sync::mpsc::{self, Receiver, Sender},
 };

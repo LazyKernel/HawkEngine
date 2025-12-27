@@ -1,19 +1,13 @@
-use std::{
-    net::SocketAddr,
-    time::{self, Instant, SystemTime},
-};
+use std::time::Instant;
 
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
-use specs::{Join, Read, ReadStorage, System, Write};
-use uuid::{timestamp::UUID_TICKS_BETWEEN_EPOCHS, Uuid};
+use specs::{System, Write};
+use uuid::Uuid;
 
 use crate::{
-    ecs::{
-        components::{general::Transform, network::NetworkReplicated},
-        resources::network::{MessageType, NetworkData, NetworkPacketOut, NetworkProtocol, Player},
-    },
-    network::{constants::KEEP_ALIVE_INTERVAL, tokio::Client},
+    ecs::resources::network::{MessageType, NetworkData, NetworkPacketOut, NetworkProtocol, Player},
+    network::constants::KEEP_ALIVE_INTERVAL,
 };
 
 #[derive(Serialize, Deserialize)]

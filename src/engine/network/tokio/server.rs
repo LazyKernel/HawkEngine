@@ -1,26 +1,24 @@
 use std::collections::HashMap;
 use std::net::IpAddr;
-use std::time::Instant;
 use std::{net::SocketAddr, sync::Arc};
 
-use log::{error, info, trace, warn};
+use log::{error, info, trace};
 use uuid::Uuid;
 
 use crate::ecs::resources::network::{
-    MessageType, NetworkPacketIn, NetworkPacketOut, NetworkProtocol,
+    NetworkPacketIn, NetworkPacketOut, NetworkProtocol,
 };
 use crate::network::tokio::Client;
-use crate::network::{constants::UDP_BUF_SIZE, tokio::RawNetworkMessagePacket};
-use crate::{ecs::resources::network::NetworkData, network::tokio::RawNetworkMessage};
+use crate::network::tokio::RawNetworkMessagePacket;
+use crate::network::tokio::RawNetworkMessage;
 use tokio::{
-    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
+    io::{AsyncReadExt, AsyncWriteExt},
     net::{
-        tcp::{self, OwnedReadHalf, OwnedWriteHalf},
-        TcpListener, TcpStream, UdpSocket,
+        tcp::{OwnedReadHalf, OwnedWriteHalf},
+        TcpListener, UdpSocket,
     },
     sync::{
         broadcast::{self},
-        futures,
         mpsc::{self, Receiver, Sender},
         RwLock,
     },
@@ -153,8 +151,8 @@ pub async fn server_loop(
     let udp_socket = UdpSocket::bind((addr, port + 1)).await.unwrap();
     let udp_socket_arc = Arc::new(udp_socket);
 
-    let mut clients: Arc<RwLock<HashMap<SocketAddr, Client>>> = Default::default();
-    let mut clients_net_id: Arc<RwLock<HashMap<Uuid, Client>>> = Default::default();
+    let clients: Arc<RwLock<HashMap<SocketAddr, Client>>> = Default::default();
+    let clients_net_id: Arc<RwLock<HashMap<Uuid, Client>>> = Default::default();
 
     let (tokio_to_game_sender, mut tokio_to_game_receiver) =
         mpsc::channel::<RawNetworkMessage>(16384);

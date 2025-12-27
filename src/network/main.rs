@@ -1,7 +1,7 @@
-use std::{collections::HashMap, env, error::Error, io, net::{IpAddr, SocketAddr}, sync::Arc, time::Instant};
-use log::{error, info, log, trace, warn};
-use tokio::{io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt}, net::{tcp::{self, OwnedReadHalf, OwnedWriteHalf}, TcpListener, TcpStream, UdpSocket}, sync::{broadcast::{self, Receiver}, futures, mpsc::{self, Sender}, RwLock}};
-use uuid::{uuid, Uuid};
+use std::{collections::HashMap, env, io, net::{IpAddr, SocketAddr}, sync::Arc, time::Instant};
+use log::{error, info, trace, warn};
+use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::{tcp::{OwnedReadHalf, OwnedWriteHalf}, TcpListener, TcpStream, UdpSocket}, sync::{broadcast::{self}, mpsc::{self}, RwLock}};
+use uuid::Uuid;
 use serde::{Serialize, Deserialize};
 
 struct Client {
@@ -173,7 +173,7 @@ async fn server() {
     let udp_socket = UdpSocket::bind("127.0.0.1:6782").await.unwrap();
     let udp_socket_arc = Arc::new(udp_socket);
 
-    let mut clients: Arc<RwLock<HashMap<IpAddr, Client>>> = Default::default();
+    let clients: Arc<RwLock<HashMap<IpAddr, Client>>> = Default::default();
 
     let (tokio_to_game_sender, mut tokio_to_game_receiver) = mpsc::channel::<NetworkMessage>(16384);
     let (game_to_tokio_sender, game_to_tokio_receiver) = broadcast::channel::<NetworkMessage>(16384);
@@ -351,7 +351,7 @@ async fn client_send_task_udp(socket: Arc<UdpSocket>, mut game_to_tokio_receiver
 
 async fn client() {
     let tcp_stream = TcpStream::connect("127.0.0.1:6782").await.expect("Could not connect to server");
-    let mut udp_stream = UdpSocket::bind("127.0.0.1:0").await.expect("Could not connect to server over UDP");
+    let udp_stream = UdpSocket::bind("127.0.0.1:0").await.expect("Could not connect to server over UDP");
     let udp_sock_arc = Arc::new(udp_stream);
     
     let mut client: Option<Client> = None;

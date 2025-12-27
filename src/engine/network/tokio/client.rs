@@ -1,27 +1,17 @@
-use std::collections::HashMap;
 use std::net::IpAddr;
-use std::time::Instant;
 use std::{net::SocketAddr, sync::Arc};
 
-use log::{error, info, trace, warn};
-use uuid::Uuid;
+use log::{error, trace};
 
-use crate::ecs::resources::network::{MessageType, NetworkProtocol};
-use crate::ecs::resources::network::{NetworkData, NetworkPacketIn, NetworkPacketOut};
-use crate::network::constants::UDP_BUF_SIZE;
+use crate::ecs::resources::network::NetworkProtocol;
+use crate::ecs::resources::network::{NetworkPacketIn, NetworkPacketOut};
 use crate::network::tokio::{Client, RawNetworkMessage, RawNetworkMessagePacket};
 use tokio::{
-    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
+    io::{AsyncReadExt, AsyncWriteExt},
     net::{
-        tcp::{self, OwnedReadHalf, OwnedWriteHalf},
-        TcpListener, TcpStream, UdpSocket,
+        tcp::{OwnedReadHalf, OwnedWriteHalf}, TcpStream, UdpSocket,
     },
-    sync::{
-        broadcast::{self},
-        futures,
-        mpsc::{self, Receiver, Sender},
-        RwLock,
-    },
+    sync::mpsc::{self, Receiver, Sender},
 };
 
 async fn client_send_task(
@@ -137,13 +127,13 @@ pub async fn client_loop(
     let tcp_stream = TcpStream::connect((addr, port))
         .await
         .expect("Could not connect to server");
-    let mut udp_stream = UdpSocket::bind("127.0.0.1:0")
+    let udp_stream = UdpSocket::bind("127.0.0.1:0")
         .await
         .expect("Could not connect to server over UDP");
     let _ = udp_stream.connect((addr, port + 1)).await;
     let udp_sock_arc = Arc::new(udp_stream);
 
-    let mut client: Option<Client> = None;
+    let client: Option<Client> = None;
 
     let (tokio_to_game_sender, mut tokio_to_game_receiver) =
         mpsc::channel::<RawNetworkMessage>(16384);
