@@ -25,19 +25,17 @@ pub enum NetworkProtocol {
 }
 
 #[derive(Clone, Serialize, Deserialize)]
-pub struct NetworkPacket {
+pub struct NetworkPacketOut {
     pub net_id: Uuid,
-    pub addr: Option<SocketAddr>,
     pub message_type: MessageType,
     pub protocol: NetworkProtocol,
     pub data: Vec<u8>,
 }
 
-impl Default for NetworkPacket {
+impl Default for NetworkPacketOut {
     fn default() -> Self {
-        NetworkPacket {
+        NetworkPacketOut {
             net_id: Uuid::nil(),
-            addr: None,
             message_type: MessageType::Unknown,
             protocol: NetworkProtocol::TCP,
             data: vec![],
@@ -45,15 +43,28 @@ impl Default for NetworkPacket {
     }
 }
 
+#[derive(Clone, Serialize, Deserialize)]
+pub struct NetworkPacketIn {
+    pub client: Client,
+    pub message_type: MessageType,
+    pub protocol: NetworkProtocol,
+    pub data: Vec<u8>,
+}
+
+pub struct Player {
+    pub client_id: Uuid,
+    pub last_keep_alive: Instant,
+}
+
 pub struct NetworkData {
     pub is_server: bool,
-    pub sender: Sender<NetworkPacket>,
-    pub receiver: Receiver<NetworkPacket>,
+    pub sender: Sender<NetworkPacketOut>,
+    pub receiver: Receiver<NetworkPacketIn>,
     pub target_addr: SocketAddr,
     pub local_addr: SocketAddr,
     pub net_id_ent: HashMap<Uuid, Entity>,
-    pub player_list: HashMap<Uuid, Client>,
-    pub player_self: Option<Client>,
+    pub player_list: HashMap<Uuid, Player>,
+    pub player_self: Option<Player>,
     pub server_last_keep_alive: Instant,
     pub client_connection_tried_last: Instant,
 }

@@ -7,7 +7,7 @@ use log::{error, info, trace, warn};
 use uuid::Uuid;
 
 use crate::ecs::resources::network::{MessageType, NetworkProtocol};
-use crate::ecs::resources::network::{NetworkData, NetworkPacket};
+use crate::ecs::resources::network::{NetworkData, NetworkPacketIn, NetworkPacketOut};
 use crate::network::constants::UDP_BUF_SIZE;
 use crate::network::tokio::{Client, RawNetworkMessage, RawNetworkMessagePacket};
 use tokio::{
@@ -131,8 +131,8 @@ async fn client_send_task_udp(
 pub async fn client_loop(
     addr: IpAddr,
     port: u16,
-    sender: Sender<NetworkPacket>,
-    mut receiver: Receiver<NetworkPacket>,
+    sender: Sender<NetworkPacketIn>,
+    mut receiver: Receiver<NetworkPacketOut>,
 ) {
     let tcp_stream = TcpStream::connect((addr, port))
         .await
@@ -189,9 +189,8 @@ pub async fn client_loop(
                 match &client {
                     Some(c) => {
                         sender
-                            .send(NetworkPacket {
-                                net_id: c.client_id,
-                                addr: Some(data.addr),
+                            .send(NetworkPacketIn {
+                                client: c.clone(),
                                 message_type: data.packet.message_type,
                                 protocol: NetworkProtocol::TCP,
                                 data: data.packet.payload,
@@ -213,9 +212,8 @@ pub async fn client_loop(
                 match &client {
                     Some(c) => {
                         sender
-                            .send(NetworkPacket {
-                                net_id: c.client_id,
-                                addr: Some(data.addr),
+                            .send(NetworkPacketIn {
+                                client: c.clone(),
                                 message_type: data.packet.message_type,
                                 protocol: NetworkProtocol::UDP,
                                 data: data.packet.payload,

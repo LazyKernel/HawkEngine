@@ -3,7 +3,7 @@ use specs::{Join, Read, ReadStorage, System};
 
 use crate::ecs::{
     components::{general::Transform, network::NetworkReplicated},
-    resources::network::{MessageType, NetworkData, NetworkPacket, NetworkProtocol},
+    resources::network::{MessageType, NetworkData, NetworkPacketOut, NetworkProtocol},
 };
 
 /// Handler for generic replicated components
@@ -36,7 +36,7 @@ impl<'a> System<'a> for GenericHandler {
 
             match rmp_serde::to_vec(&t) {
                 Ok(v) => {
-                    let message = NetworkPacket {
+                    let message = NetworkPacketOut {
                         net_id: net_rep.net_id,
                         message_type: MessageType::ComponentTransform,
                         data: v,

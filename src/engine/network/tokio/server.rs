@@ -6,13 +6,12 @@ use std::{net::SocketAddr, sync::Arc};
 use log::{error, info, trace, warn};
 use uuid::Uuid;
 
-use crate::ecs::resources::network::{MessageType, NetworkProtocol};
+use crate::ecs::resources::network::{
+    MessageType, NetworkPacketIn, NetworkPacketOut, NetworkProtocol,
+};
 use crate::network::tokio::Client;
 use crate::network::{constants::UDP_BUF_SIZE, tokio::RawNetworkMessagePacket};
-use crate::{
-    ecs::resources::network::{NetworkData, NetworkPacket},
-    network::tokio::RawNetworkMessage,
-};
+use crate::{ecs::resources::network::NetworkData, network::tokio::RawNetworkMessage};
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
     net::{
@@ -85,7 +84,7 @@ async fn server_send_task(
 }
 
 async fn server_read_task_udp(
-    clients: Arc<RwLock<HashMap<IpAddr, Client>>>,
+    clients: Arc<RwLock<HashMap<SocketAddr, Client>>>,
     socket: Arc<UdpSocket>,
     tokio_to_game_sender: mpsc::Sender<RawNetworkMessage>,
 ) {
@@ -98,7 +97,7 @@ async fn server_read_task_udp(
 
                 // ignore if the client isn't connected
                 // TODO: need to encrypt udp traffic at some point
-                if !clients.read().await.contains_key(&addr.ip()) {
+                if !clients.read().await.contains_key(&addr) {
                     continue;
                 }
 
@@ -147,14 +146,14 @@ async fn server_send_task_udp(
 pub async fn server_loop(
     addr: IpAddr,
     port: u16,
-    sender: Sender<NetworkPacket>,
-    mut receiver: Receiver<NetworkPacket>,
+    sender: Sender<NetworkPacketIn>,
+    mut receiver: Receiver<NetworkPacketOut>,
 ) {
     let tcp_listener = TcpListener::bind((addr, port)).await.unwrap();
     let udp_socket = UdpSocket::bind((addr, port + 1)).await.unwrap();
     let udp_socket_arc = Arc::new(udp_socket);
 
-    let mut clients: Arc<RwLock<HashMap<IpAddr, Client>>> = Default::default();
+    let mut clients: Arc<RwLock<HashMap<SocketAddr, Client>>> = Default::default();
     let mut clients_net_id: Arc<RwLock<HashMap<Uuid, Client>>> = Default::default();
 
     let (tokio_to_game_sender, mut tokio_to_game_receiver) =
@@ -170,17 +169,22 @@ pub async fn server_loop(
     let receiver_generator = game_to_tokio_sender.clone();
     drop(game_to_tokio_receiver);
 
+    let clients_loop = clients.clone();
+
     tokio::spawn(async move {
         loop {
             let (socket, addr) = tcp_listener.accept().await.unwrap();
 
             info!("Got a connection from {:?}", addr);
 
-            let mut clients_mut = clients.write_owned().await;
-            // FIXME: connection handling, uuid accepting needs to be handled at this level
-            // info about connection packets can be propagated up too, but main logic stays down
-            // here
-            clients_mut.insert(addr, Client { client_id: None, addr: (), last_keep_alive: () })
+            let mut clients_mut = clients_loop.clone().write_owned().await;
+            clients_mut.insert(
+                addr,
+                Client {
+                    client_id: Uuid::new_v4(),
+                    addr: addr,
+                },
+            );
 
             let (rx_socket, tx_socket) = socket.into_split();
             let sender = tokio_to_game_sender.clone();
@@ -213,13 +217,12 @@ pub async fn server_loop(
             match tokio_to_game_receiver.try_recv() {
                 Ok(data) => {
                     let clients_read = clients.read().await;
-                    let client = clients_read.get(&data.addr.ip());
+                    let client = clients_read.get(&data.addr);
                     match client {
                         Some(c) => {
                             sender
-                                .send(NetworkPacket {
-                                    net_id: c.client_id,
-                                    addr: Some(data.addr),
+                                .send(NetworkPacketIn {
+                                    client: c.clone(),
                                     message_type: data.packet.message_type,
                                     protocol: NetworkProtocol::TCP,
                                     data: data.packet.payload,
@@ -241,13 +244,12 @@ pub async fn server_loop(
             match tokio_to_game_receiver_udp.try_recv() {
                 Ok(data) => {
                     let clients_read = clients.read().await;
-                    let client = clients_read.get(&data.addr.ip());
+                    let client = clients_read.get(&data.addr);
                     match client {
                         Some(c) => {
                             sender
-                                .send(NetworkPacket {
-                                    net_id: c.client_id,
-                                    addr: Some(data.addr),
+                                .send(NetworkPacketIn {
+                                    client: c.clone(),
                                     message_type: data.packet.message_type,
                                     protocol: NetworkProtocol::UDP,
                                     data: data.packet.payload,

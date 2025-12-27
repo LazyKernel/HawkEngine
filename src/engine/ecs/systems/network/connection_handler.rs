@@ -11,7 +11,7 @@ use uuid::{timestamp::UUID_TICKS_BETWEEN_EPOCHS, Uuid};
 use crate::{
     ecs::{
         components::{general::Transform, network::NetworkReplicated},
-        resources::network::{MessageType, NetworkData, NetworkPacket, NetworkProtocol},
+        resources::network::{MessageType, NetworkData, NetworkPacketOut, NetworkProtocol, Player},
     },
     network::{constants::KEEP_ALIVE_INTERVAL, tokio::Client},
 };
@@ -51,12 +51,12 @@ impl<'a> System<'a> for ConnectionHandler {
                 Ok(v) => match v.message_type {
                     MessageType::ConnectionKeepAlive => {
                         if net_data.is_server {
-                            let client_maybe = net_data.player_list.get_mut(&v.net_id);
-                            match client_maybe {
-                                Some(client) => client.last_keep_alive = Instant::now(),
+                            let player_maybe = net_data.player_list.get_mut(&v.client.client_id);
+                            match player_maybe {
+                                Some(player) => player.last_keep_alive = Instant::now(),
                                 None => warn!(
                                     "Got a ConnectionKeepAlive from an unknown client: {:?}",
-                                    v.net_id
+                                    v.client.client_id
                                 ),
                             }
                         } else {
@@ -65,56 +65,50 @@ impl<'a> System<'a> for ConnectionHandler {
                     }
                     MessageType::ConnectionRequest => {
                         if net_data.is_server {
-                            let new_uuid = Uuid::new_v4();
-                            if let Some(addr) = v.addr {
-                                net_data.player_list.insert(
-                                    new_uuid,
-                                    Client {
-                                        client_id: new_uuid,
-                                        addr: addr,
-                                        last_keep_alive: Instant::now(),
-                                    },
-                                );
-                                match rmp_serde::to_vec(&ConnectionAcceptData { uuid: new_uuid }) {
-                                    Ok(v) => {
-                                        if let Err(e) = net_data.sender.try_send(NetworkPacket {
-                                            net_id: new_uuid,
-                                            addr: Some(addr),
-                                            message_type: MessageType::ConnectionAccept,
-                                            protocol: NetworkProtocol::TCP,
-                                            data: v,
-                                        }) {
-                                            error!("Error trying to send ConnectionAccept from ConnectionHandler: {:?}", e);
-                                        }
-                                    }
-                                    Err(e) => {
-                                        error!("Failed serializing ConnectionAcceptData: {:?}", e);
+                            net_data.player_list.insert(
+                                v.client.client_id,
+                                Player {
+                                    client_id: v.client.client_id,
+                                    last_keep_alive: Instant::now(),
+                                },
+                            );
+                            match rmp_serde::to_vec(&ConnectionAcceptData {
+                                uuid: v.client.client_id,
+                            }) {
+                                Ok(data) => {
+                                    if let Err(e) = net_data.sender.try_send(NetworkPacketOut {
+                                        net_id: v.client.client_id,
+                                        message_type: MessageType::ConnectionAccept,
+                                        protocol: NetworkProtocol::TCP,
+                                        data: data,
+                                    }) {
+                                        error!("Error trying to send ConnectionAccept from ConnectionHandler: {:?}", e);
                                     }
                                 }
+                                Err(e) => {
+                                    error!("Failed serializing ConnectionAcceptData: {:?}", e);
+                                }
+                            }
 
-                                match rmp_serde::to_vec(&NewClientData {
-                                    uuid: new_uuid,
-                                    name: "Not used yet".into(),
-                                }) {
-                                    Ok(v) => {
-                                        for (net_id, _) in net_data.player_list.iter_mut() {
-                                            if let Err(e) = sender.try_send(NetworkPacket {
-                                                net_id: *net_id,
-                                                message_type: MessageType::NewClient,
-                                                protocol: NetworkProtocol::TCP,
-                                                data: v.clone(),
-                                                ..Default::default()
-                                            }) {
-                                                error!("Could not send NewClientData from ConnectionHandler to {:?}: {:?}", *net_id, e);
-                                            }
+                            match rmp_serde::to_vec(&NewClientData {
+                                uuid: v.client.client_id,
+                                name: "Not used yet".into(),
+                            }) {
+                                Ok(v) => {
+                                    for (net_id, _) in net_data.player_list.iter_mut() {
+                                        if let Err(e) = sender.try_send(NetworkPacketOut {
+                                            net_id: *net_id,
+                                            message_type: MessageType::NewClient,
+                                            protocol: NetworkProtocol::TCP,
+                                            data: v.clone(),
+                                        }) {
+                                            error!("Could not send NewClientData from ConnectionHandler to {:?}: {:?}", *net_id, e);
                                         }
                                     }
-                                    Err(e) => {
-                                        error!("Failed serializing NewClientData: {:?}", e);
-                                    }
                                 }
-                            } else {
-                                error!("Could not add Client to player_list, address None");
+                                Err(e) => {
+                                    error!("Failed serializing NewClientData: {:?}", e);
+                                }
                             }
                         } else {
                             warn!("Client somehow got a ConnectionRequest packet????");
@@ -125,9 +119,8 @@ impl<'a> System<'a> for ConnectionHandler {
                             match rmp_serde::from_slice::<ConnectionAcceptData>(&v.data) {
                                 Ok(acc) => {
                                     info!("We got assigned {:?}", acc.uuid);
-                                    net_data.player_self = Some(Client {
+                                    net_data.player_self = Some(Player {
                                         client_id: acc.uuid,
-                                        addr: net_data.local_addr,
                                         last_keep_alive: Instant::now(),
                                     });
                                 }
@@ -153,7 +146,7 @@ impl<'a> System<'a> for ConnectionHandler {
             for (net_id, client) in net_data.player_list.iter_mut() {
                 if Instant::now() - client.last_keep_alive >= KEEP_ALIVE_INTERVAL {
                     client.last_keep_alive = Instant::now();
-                    if let Err(e) = sender.try_send(NetworkPacket {
+                    if let Err(e) = sender.try_send(NetworkPacketOut {
                         net_id: *net_id,
                         message_type: MessageType::ConnectionKeepAlive,
                         protocol: NetworkProtocol::TCP,
@@ -166,7 +159,7 @@ impl<'a> System<'a> for ConnectionHandler {
         } else if let Some(player) = &mut net_data.player_self {
             if Instant::now() - player.last_keep_alive >= KEEP_ALIVE_INTERVAL {
                 player.last_keep_alive = Instant::now();
-                if let Err(e) = sender.try_send(NetworkPacket {
+                if let Err(e) = sender.try_send(NetworkPacketOut {
                     net_id: player.client_id,
                     message_type: MessageType::ConnectionKeepAlive,
                     protocol: NetworkProtocol::TCP,
@@ -181,7 +174,7 @@ impl<'a> System<'a> for ConnectionHandler {
         } else if net_data.player_self.is_none() {
             if Instant::now() - net_data.client_connection_tried_last >= KEEP_ALIVE_INTERVAL {
                 net_data.client_connection_tried_last = Instant::now();
-                if let Err(e) = sender.try_send(NetworkPacket {
+                if let Err(e) = sender.try_send(NetworkPacketOut {
                     message_type: MessageType::ConnectionRequest,
                     protocol: NetworkProtocol::TCP,
                     ..Default::default()
