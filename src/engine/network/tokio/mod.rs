@@ -12,7 +12,10 @@ use log::error;
 use serde::{Deserialize, Serialize};
 use tokio::{
     runtime::Runtime,
-    sync::mpsc::{self, Receiver, Sender},
+    sync::{
+        broadcast,
+        mpsc::{self, Receiver, Sender},
+    },
 };
 use uuid::Uuid;
 
@@ -33,7 +36,7 @@ pub struct RawNetworkMessage {
     packet: RawNetworkMessagePacket,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Client {
     pub client_id: Uuid,
     pub addr: SocketAddr,
@@ -54,8 +57,8 @@ async fn tokio_network_loop(
     addr: IpAddr,
     port: u16,
     server: bool,
-    sender: Sender<NetworkPacketIn>,
-    receiver: Receiver<NetworkPacketOut>,
+    sender: broadcast::Sender<NetworkPacketIn>,
+    receiver: mpsc::Receiver<NetworkPacketOut>,
 ) {
     if server {
         server_loop(addr, port, sender, receiver).await;
@@ -65,7 +68,7 @@ async fn tokio_network_loop(
 }
 
 pub fn start_network_thread(address: &str, port: u16, server: bool) -> Option<NetworkData> {
-    let (a2s_sender, a2s_receiver) = mpsc::channel::<NetworkPacketIn>(16384);
+    let (a2s_sender, _a2s_receiver) = broadcast::channel::<NetworkPacketIn>(16384);
     let (s2a_sender, s2a_receiver) = mpsc::channel::<NetworkPacketOut>(16384);
 
     let addr_parsed = address.parse::<IpAddr>();
@@ -78,6 +81,8 @@ pub fn start_network_thread(address: &str, port: u16, server: bool) -> Option<Ne
             return None;
         }
     };
+
+    let in_packets_sender = a2s_sender.clone();
 
     thread::spawn(move || {
         let rt_res = Runtime::new();
@@ -97,7 +102,7 @@ pub fn start_network_thread(address: &str, port: u16, server: bool) -> Option<Ne
 
     return Some(NetworkData {
         sender: s2a_sender,
-        receiver: a2s_receiver,
+        in_packets_sender: in_packets_sender,
         target_addr: (addr_ok, port).into(),
         net_id_ent: HashMap::new(),
         is_server: server,

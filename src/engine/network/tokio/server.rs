@@ -142,8 +142,8 @@ async fn server_send_task_udp(
 pub async fn server_loop(
     addr: IpAddr,
     port: u16,
-    sender: Sender<NetworkPacketIn>,
-    mut receiver: Receiver<NetworkPacketOut>,
+    sender: broadcast::Sender<NetworkPacketIn>,
+    mut receiver: mpsc::Receiver<NetworkPacketOut>,
 ) {
     let tcp_listener = TcpListener::bind((addr, port)).await.unwrap();
     let udp_socket = UdpSocket::bind((addr, port + 1)).await.unwrap();
@@ -228,15 +228,12 @@ pub async fn server_loop(
                     let client = clients_read.get(&data.addr);
                     match client {
                         Some(c) => {
-                            if let Err(e) = sender
-                                .send(NetworkPacketIn {
-                                    client: c.clone(),
-                                    message_type: data.packet.message_type,
-                                    protocol: NetworkProtocol::TCP,
-                                    data: data.packet.payload,
-                                })
-                                .await
-                            {
+                            if let Err(e) = sender.send(NetworkPacketIn {
+                                client: c.clone(),
+                                message_type: data.packet.message_type,
+                                protocol: NetworkProtocol::TCP,
+                                data: data.packet.payload,
+                            }) {
                                 error!("Could not pass network packet to game: {:?}", e);
                             }
                         }
@@ -258,15 +255,12 @@ pub async fn server_loop(
                     let client = clients_read.get(&data.addr);
                     match client {
                         Some(c) => {
-                            if let Err(e) = sender
-                                .send(NetworkPacketIn {
-                                    client: c.clone(),
-                                    message_type: data.packet.message_type,
-                                    protocol: NetworkProtocol::UDP,
-                                    data: data.packet.payload,
-                                })
-                                .await
-                            {
+                            if let Err(e) = sender.send(NetworkPacketIn {
+                                client: c.clone(),
+                                message_type: data.packet.message_type,
+                                protocol: NetworkProtocol::UDP,
+                                data: data.packet.payload,
+                            }) {
                                 error!("Could not pass udp network packet to game: {:?}", e);
                             }
                         }

@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
 use specs::Entity;
 use std::{collections::HashMap, net::SocketAddr, time::Instant};
-use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::sync::broadcast;
+use tokio::sync::mpsc;
 use uuid::Uuid;
 
 use crate::network::tokio::Client;
@@ -13,12 +14,13 @@ pub enum MessageType {
     ConnectionAccept,
     ConnectionKeepAlive,
     NewClient,
+    NewReplicated,
     ComponentTransform,
     ComponentCustom(String),
     ChatMessage,
 }
 
-#[derive(Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum NetworkProtocol {
     TCP,
     UDP,
@@ -43,7 +45,7 @@ impl Default for NetworkPacketOut {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NetworkPacketIn {
     pub client: Client,
     pub message_type: MessageType,
@@ -58,8 +60,9 @@ pub struct Player {
 
 pub struct NetworkData {
     pub is_server: bool,
-    pub sender: Sender<NetworkPacketOut>,
-    pub receiver: Receiver<NetworkPacketIn>,
+    pub sender: mpsc::Sender<NetworkPacketOut>,
+    // used to generate receivers for network packets
+    pub in_packets_sender: broadcast::Sender<NetworkPacketIn>,
     pub target_addr: SocketAddr,
     pub local_addr: SocketAddr,
     pub net_id_ent: HashMap<Uuid, Entity>,

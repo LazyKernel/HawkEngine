@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use log::{error, warn};
 use serde::{Deserialize, Serialize};
 use specs::{Join, Read, ReadStorage, System, WorldExt as _, WriteStorage};
@@ -25,23 +23,22 @@ struct NewReplicatedMessage {
     pub init_transform: Transform,
 }
 
-/// Handler for generic replicated components
-/// Responsible for converting Transform updates to network messages
-///
+/// Handler for network actions related to players
+/// Spawns the player, handles player actions
 
-pub struct GenericHandler {
+pub struct PlayerHandler {
     receiver: broadcast::Receiver<NetworkPacketIn>,
 }
 
-impl Default for GenericHandler {
+impl Default for PlayerHandler {
     fn default() -> Self {
-        GenericHandler {
+        PlayerHandler {
             receiver: broadcast::channel(1).1,
         }
     }
 }
 
-impl<'a> System<'a> for GenericHandler {
+impl<'a> System<'a> for PlayerHandler {
     type SystemData = (
         ReadStorage<'a, NetworkReplicated>,
         WriteStorage<'a, Transform>,

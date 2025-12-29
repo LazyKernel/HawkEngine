@@ -2,6 +2,7 @@ use std::net::IpAddr;
 use std::{net::SocketAddr, sync::Arc};
 
 use log::{error, trace};
+use tokio::sync::broadcast;
 
 use crate::ecs::resources::network::{MessageType, NetworkProtocol};
 use crate::ecs::resources::network::{NetworkPacketIn, NetworkPacketOut};
@@ -123,8 +124,8 @@ async fn client_send_task_udp(
 pub async fn client_loop(
     addr: IpAddr,
     port: u16,
-    sender: Sender<NetworkPacketIn>,
-    mut receiver: Receiver<NetworkPacketOut>,
+    sender: broadcast::Sender<NetworkPacketIn>,
+    mut receiver: mpsc::Receiver<NetworkPacketOut>,
 ) {
     let tcp_stream = TcpStream::connect((addr, port))
         .await
@@ -193,15 +194,12 @@ pub async fn client_loop(
                     }
                 }
 
-                if let Err(e) = sender
-                    .send(NetworkPacketIn {
-                        client: client.clone(),
-                        message_type: data.packet.message_type,
-                        protocol: NetworkProtocol::TCP,
-                        data: data.packet.payload,
-                    })
-                    .await
-                {
+                if let Err(e) = sender.send(NetworkPacketIn {
+                    client: client.clone(),
+                    message_type: data.packet.message_type,
+                    protocol: NetworkProtocol::TCP,
+                    data: data.packet.payload,
+                }) {
                     error!("Could not pass packet to game: {:?}", e);
                 }
             }
@@ -214,15 +212,12 @@ pub async fn client_loop(
         while !tokio_to_game_receiver_udp.is_empty() && n_recv_udp < 10000 {
             println!("Trying to receive udp");
             if let Ok(data) = tokio_to_game_receiver_udp.try_recv() {
-                if let Err(e) = sender
-                    .send(NetworkPacketIn {
-                        client: client.clone(),
-                        message_type: data.packet.message_type,
-                        protocol: NetworkProtocol::UDP,
-                        data: data.packet.payload,
-                    })
-                    .await
-                {
+                if let Err(e) = sender.send(NetworkPacketIn {
+                    client: client.clone(),
+                    message_type: data.packet.message_type,
+                    protocol: NetworkProtocol::UDP,
+                    data: data.packet.payload,
+                }) {
                     error!("Could not pass udp packet to game: {:?}", e);
                 }
             }

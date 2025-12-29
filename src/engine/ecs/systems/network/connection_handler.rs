@@ -2,12 +2,13 @@ use std::time::Instant;
 
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
-use specs::{System, Write};
+use specs::{System, WorldExt, Write};
+use tokio::sync::broadcast;
 use uuid::Uuid;
 
 use crate::{
     ecs::resources::network::{
-        MessageType, NetworkData, NetworkPacketOut, NetworkProtocol, Player,
+        MessageType, NetworkData, NetworkPacketIn, NetworkPacketOut, NetworkProtocol, Player,
     },
     network::constants::KEEP_ALIVE_INTERVAL,
 };
@@ -25,7 +26,17 @@ struct NewClientData {
 
 // Starts and keeps the connection alive
 
-pub struct ConnectionHandler;
+pub struct ConnectionHandler {
+    receiver: broadcast::Receiver<NetworkPacketIn>,
+}
+
+impl Default for ConnectionHandler {
+    fn default() -> Self {
+        ConnectionHandler {
+            receiver: broadcast::channel(1).1,
+        }
+    }
+}
 
 impl<'a> System<'a> for ConnectionHandler {
     type SystemData = (Option<Write<'a, NetworkData>>,);
@@ -42,8 +53,8 @@ impl<'a> System<'a> for ConnectionHandler {
         let sender = (&mut net_data).sender.clone();
 
         // handle incoming packets
-        while !net_data.receiver.is_empty() {
-            match net_data.receiver.try_recv() {
+        while !self.receiver.is_empty() {
+            match self.receiver.try_recv() {
                 Ok(v) => match v.message_type {
                     MessageType::ConnectionKeepAlive => {
                         if net_data.is_server {
@@ -182,5 +193,17 @@ impl<'a> System<'a> for ConnectionHandler {
                 }
             }
         }
+    }
+
+    fn setup(&mut self, world: &mut specs::World) {
+        let broadcast_sender = world.read_resource::<broadcast::Sender<NetworkPacketIn>>();
+        self.receiver = broadcast_sender.subscribe();
+    }
+
+    fn dispose(self, world: &mut specs::World)
+    where
+        Self: Sized,
+    {
+        drop(self.receiver);
     }
 }

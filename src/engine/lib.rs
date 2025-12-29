@@ -113,7 +113,7 @@ impl<'a> HawkEngine<'a> {
         }
 
         let mut dbuilder = DispatcherBuilder::new();
-        dbuilder.add(ConnectionHandler, "connection_handler", &[]);
+        dbuilder.add(ConnectionHandler::default(), "connection_handler", &[]);
         let network_dispatch = dbuilder.build();
         self.add_dispatcher(network_dispatch);
     }
