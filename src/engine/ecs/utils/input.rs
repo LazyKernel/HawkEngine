@@ -1,6 +1,8 @@
 use log::{trace, warn};
-use winit::{event::{DeviceEvent, ElementState, KeyEvent, Modifiers, MouseButton}, keyboard::{KeyCode, ModifiersState, PhysicalKey}};
-
+use winit::{
+    event::{DeviceEvent, ElementState, KeyEvent, Modifiers, MouseButton},
+    keyboard::{KeyCode, ModifiersState, PhysicalKey},
+};
 
 // Heavily inspired by winit_input_helper
 #[derive(Clone)]
@@ -21,11 +23,32 @@ impl Default for InputHelper {
     }
 }
 
+pub trait InputSource {
+    fn held_shift(&self) -> bool;
+
+    fn held_control(&self) -> bool;
+
+    fn key_held(&self, key: KeyCode) -> bool;
+}
+
+impl InputSource for InputHelper {
+    fn held_shift(&self) -> bool {
+        self.modifiers_state.shift_key()
+    }
+
+    fn held_control(&self) -> bool {
+        self.modifiers_state.control_key()
+    }
+
+    fn key_held(&self, key: KeyCode) -> bool {
+        let physical_key = PhysicalKey::Code(key);
+        self.keys_held.contains(&physical_key)
+    }
+}
 
 impl InputHelper {
-
     pub fn new() -> Self {
-        Self { 
+        Self {
             key_actions: vec![],
             mouse_actions: vec![],
             keys_held: vec![],
@@ -38,20 +61,6 @@ impl InputHelper {
     }
 
     // Utility functions
-
-    pub fn held_shift(&self) -> bool {
-        self.modifiers_state.shift_key()
-    }
-
-    pub fn held_control(&self) -> bool {
-        self.modifiers_state.control_key()
-    }
-
-    pub fn key_held(&self, key: KeyCode) -> bool {
-        let physical_key = PhysicalKey::Code(key);
-        self.keys_held.contains(&physical_key)
-    }
-
     pub fn key_pressed(&self, key: KeyCode) -> bool {
         let physical_key = PhysicalKey::Code(key);
         let searched_action = ScanCodeAction::Pressed(physical_key);
@@ -67,7 +76,6 @@ impl InputHelper {
         self.mouse_diff_
     }
 
-    
     // Update functions
 
     pub fn step(&mut self) {
@@ -82,14 +90,16 @@ impl InputHelper {
         match event.state {
             ElementState::Pressed => {
                 if !self.keys_held.contains(&event.physical_key) {
-                    self.key_actions.push(ScanCodeAction::Pressed(event.physical_key));
+                    self.key_actions
+                        .push(ScanCodeAction::Pressed(event.physical_key));
                     self.keys_held.push(event.physical_key);
                 }
-            },
+            }
             ElementState::Released => {
-                self.key_actions.push(ScanCodeAction::Released(event.physical_key));
+                self.key_actions
+                    .push(ScanCodeAction::Released(event.physical_key));
                 self.keys_held.retain(|x| *x != event.physical_key);
-            },
+            }
         }
     }
 
@@ -100,11 +110,11 @@ impl InputHelper {
                     self.mouse_actions.push(MouseAction::Pressed(button));
                     self.mouse_buttons_held.push(button);
                 }
-            },
+            }
             ElementState::Released => {
                 self.mouse_actions.push(MouseAction::Released(button));
                 self.mouse_buttons_held.retain(|x| *x != button);
-            },
+            }
         }
     }
 
@@ -114,7 +124,7 @@ impl InputHelper {
                 // not sure if we can get multiple of these per frame
                 self.mouse_diff_.0 += delta.0 as f32;
                 self.mouse_diff_.1 += delta.1 as f32;
-            },
+            }
             _ => trace!("Device event not implemented: {:?}", device_event),
         }
     }
@@ -123,25 +133,26 @@ impl InputHelper {
         match stage {
             0 => {
                 // 0 usually means released
-                self.mouse_actions.push(MouseAction::Released(MouseButton::Left));
+                self.mouse_actions
+                    .push(MouseAction::Released(MouseButton::Left));
                 self.mouse_buttons_held.retain(|x| *x != MouseButton::Left);
-            },
+            }
             1 => {
                 // 1 usually means pressed
                 if !self.mouse_buttons_held.contains(&MouseButton::Left) {
-                    self.mouse_actions.push(MouseAction::Pressed(MouseButton::Left));
+                    self.mouse_actions
+                        .push(MouseAction::Pressed(MouseButton::Left));
                     self.mouse_buttons_held.push(MouseButton::Left);
                 }
-            },
-            _ => warn!("Missing touchpad event stage {:?}", stage)
+            }
+            _ => warn!("Missing touchpad event stage {:?}", stage),
         };
     }
 
     pub fn handle_modifiers(&mut self, modifiers: Modifiers) {
-        self.modifiers_state = modifiers.state();  
+        self.modifiers_state = modifiers.state();
     }
 }
-
 
 #[derive(Clone, PartialEq)]
 enum ScanCodeAction {

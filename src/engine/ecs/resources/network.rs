@@ -18,6 +18,7 @@ pub enum MessageType {
     ComponentTransform,
     ComponentCustom(String),
     ChatMessage,
+    PlayerInput,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -53,6 +54,7 @@ pub struct NetworkPacketIn {
     pub data: Vec<u8>,
 }
 
+#[derive(Debug, Clone, Copy)]
 pub struct Player {
     pub client_id: Uuid,
     pub last_keep_alive: Instant,

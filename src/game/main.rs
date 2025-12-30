@@ -77,6 +77,7 @@ fn init(engine: &mut HawkEngine) {
             jump: 3000.0,
             sensitivity: 0.1,
             max_jumps: 2,
+            direct_control: true,
             ..Default::default()
         })
         .with(collider)

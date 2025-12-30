@@ -21,6 +21,7 @@ path = "src/network/main.rs"
 
 [dependencies]
 anyhow = "1.0.65"
+bitflags = { version = "2.10.0", features = ["serde"] }
 bytemuck = "1.12.1"
 lazy_static = "1.4.0"
 log = "0.4.17"

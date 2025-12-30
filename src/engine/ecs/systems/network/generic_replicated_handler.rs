@@ -122,8 +122,8 @@ impl<'a> System<'a> for GenericHandler {
     }
 
     fn setup(&mut self, world: &mut specs::World) {
-        let broadcast_sender = world.read_resource::<broadcast::Sender<NetworkPacketIn>>();
-        self.receiver = broadcast_sender.subscribe();
+        let net_data = world.read_resource::<NetworkData>();
+        self.receiver = net_data.in_packets_sender.subscribe();
     }
 
     fn dispose(self, world: &mut specs::World)

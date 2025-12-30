@@ -61,7 +61,13 @@ async fn client_read_task(
                         error!("Error occurred while trying to pass packet from task, the queue might be full: {:?}", e);
                     }
                 }
-                Err(e) => error!("Error parsing received buffer: {:?}", e),
+                Err(e) => {
+                    error!("Error parsing received buffer: {:?}", e);
+                    if num_bytes == 0 {
+                        error!("Received 0 bytes, assuming connection closed");
+                        break;
+                    }
+                }
             }
         }
     }

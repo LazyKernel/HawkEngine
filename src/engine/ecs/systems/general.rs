@@ -1,12 +1,22 @@
-use std::sync::Arc;
+use std::{ops::Deref, sync::Arc};
 
-use log::{error, debug};
+use log::{debug, error};
 use nalgebra::{clamp, UnitQuaternion, Vector3};
-use specs::{System, Read, ReadStorage, WriteStorage, Write};
+use specs::{Read, ReadStorage, System, Write, WriteStorage};
 use vulkano::swapchain::Surface;
-use winit::{event::{MouseButton}, keyboard::KeyCode, window::CursorGrabMode};
+use winit::{event::MouseButton, keyboard::KeyCode, window::CursorGrabMode};
 
-use crate::{ecs::{components::{general::{Camera, Movement, Transform}, physics::RigidBodyComponent}, resources::{CursorGrab, DeltaTime}, utils::input::InputHelper}, graphics::utils::get_window_from_surface};
+use crate::{
+    ecs::{
+        components::{
+            general::{Camera, Movement, PlayerInputFlags, Transform},
+            physics::RigidBodyComponent,
+        },
+        resources::{CursorGrab, DeltaTime},
+        utils::input::{InputHelper, InputSource},
+    },
+    graphics::utils::get_window_from_surface,
+};
 
 pub struct PlayerInput;
 
@@ -22,7 +32,19 @@ impl<'a> System<'a> for PlayerInput {
         WriteStorage<'a, Transform>,
     );
 
-    fn run(&mut self, (delta, input, surface, mut cursor_grabbed, camera, rigid_body, mut movement, mut transform): Self::SystemData) {
+    fn run(
+        &mut self,
+        (
+            delta,
+            input,
+            surface,
+            mut cursor_grabbed,
+            camera,
+            rigid_body,
+            mut movement,
+            mut transform,
+        ): Self::SystemData,
+    ) {
         use specs::Join;
         // Verify we have all dependencies
         // Abort if not
@@ -30,7 +52,7 @@ impl<'a> System<'a> for PlayerInput {
             Some(v) => v,
             None => {
                 error!("Input helper was none");
-                return
+                return;
             }
         };
 
@@ -38,20 +60,21 @@ impl<'a> System<'a> for PlayerInput {
             Some(v) => v,
             None => {
                 error!("Input helper was none");
-                return
+                return;
             }
         };
 
         let window = match get_window_from_surface(&surface) {
             Some(v) => v,
-            None => return error!("Could not get window in PlayerInput")
+            None => return error!("Could not get window in PlayerInput"),
         };
 
         let mut diff_x: Option<f32> = None;
         let mut diff_y: Option<f32> = None;
         if input.mouse_pressed(MouseButton::Left) && !cursor_grabbed.grabbed {
             let mut mode = CursorGrabMode::Confined;
-            let result = window.set_cursor_grab(CursorGrabMode::Confined)
+            let result = window
+                .set_cursor_grab(CursorGrabMode::Confined)
                 .or_else(|_e| {
                     mode = CursorGrabMode::Locked;
                     window.set_cursor_grab(CursorGrabMode::Locked)
@@ -75,7 +98,7 @@ impl<'a> System<'a> for PlayerInput {
 
             match result {
                 Ok(_) => (),
-                Err(e) => debug!("Failed to ungrab cursor, this is weird: {:?}", e)
+                Err(e) => debug!("Failed to ungrab cursor, this is weird: {:?}", e),
             }
 
             window.set_cursor_visible(true);
@@ -87,9 +110,8 @@ impl<'a> System<'a> for PlayerInput {
             let (dx, dy) = input.mouse_diff();
             diff_x = Some(dx);
             diff_y = Some(dy);
-        }
-        else {
-            return
+        } else {
+            return;
         }
 
         for (_, r, m, t) in (&camera, &rigid_body, &mut movement, &mut transform).join() {
@@ -98,24 +120,47 @@ impl<'a> System<'a> for PlayerInput {
                 continue;
             }
 
-            t.rot = match self.calculate_rotation(diff_x, diff_y, m) {
-                Some(v) => v,
-                None => t.rot
-            };
+            if m.direct_control {
+                t.rot = match self.calculate_rotation(diff_x, diff_y, m) {
+                    Some(v) => v,
+                    None => t.rot,
+                };
 
-            if m.can_jump(r.grounded) && input.key_pressed(KeyCode::Space) {
-                let jump_accel = Vector3::y() * m.jump;
-                t.apply_acceleration(&jump_accel);
-                m.consume_jump(r.grounded)
+                m.req_rotation = Some(t.rot);
+                let mut input_flags = PlayerInputFlags::empty();
+
+                if m.can_jump(r.grounded) && input.key_pressed(KeyCode::Space) {
+                    let jump_accel = Vector3::y() * m.jump;
+                    t.apply_acceleration(&jump_accel);
+                    m.consume_jump(r.grounded);
+                    input_flags |= PlayerInputFlags::JUMP;
+                }
+
+                let (movement_vec, movement_flags) =
+                    self.calculate_movement(input.deref(), &t.rot, m, delta.0);
+                input_flags |= movement_flags;
+                t.apply_movement(&movement_vec);
+            } else {
+                t.rot = m.req_rotation.unwrap_or(t.rot);
+                let (movement_vec, _) = self.calculate_movement(
+                    &m.req_movement.unwrap_or_default(),
+                    &t.rot,
+                    m,
+                    delta.0,
+                );
+                t.apply_movement(&movement_vec);
             }
-
-            t.apply_movement(&self.calculate_movement(&input, &t.rot, m, delta.0));
         }
     }
 }
 
 impl PlayerInput {
-    fn calculate_rotation(&self, diff_x: Option<f32>, diff_y: Option<f32>, m: &mut Movement) -> Option<UnitQuaternion<f32>> {
+    fn calculate_rotation(
+        &self,
+        diff_x: Option<f32>,
+        diff_y: Option<f32>,
+        m: &mut Movement,
+    ) -> Option<UnitQuaternion<f32>> {
         let mouse_diff = (diff_x.unwrap_or(0.0), diff_y.unwrap_or(0.0));
 
         if mouse_diff != (0.0, 0.0) {
@@ -126,49 +171,59 @@ impl PlayerInput {
 
             if m.yaw > 360.0 {
                 m.yaw -= 360.0;
-            }
-            else if m.yaw < 0.0 {
+            } else if m.yaw < 0.0 {
                 m.yaw += 360.0;
             }
 
             // roll, pitch, yaw is actually x,y,z
             Some(UnitQuaternion::from_euler_angles(
-                m.pitch.to_radians(), 
+                m.pitch.to_radians(),
                 m.yaw.to_radians(),
-                0.0
+                0.0,
             ))
-        }
-        else {
+        } else {
             None
         }
     }
 
-    fn calculate_movement(&self, input: &InputHelper, rot: &UnitQuaternion<f32>, m: &Movement, delta: f32) -> Vector3<f32> {
+    fn calculate_movement(
+        &self,
+        input: &impl InputSource,
+        rot: &UnitQuaternion<f32>,
+        m: &Movement,
+        delta: f32,
+    ) -> (Vector3<f32>, PlayerInputFlags) {
         let forward = rot * Vector3::new(0.0, 0.0, -1.0);
         let right = rot * Vector3::new(1.0, 0.0, 0.0);
+        let mut input_flags = PlayerInputFlags::empty();
 
         let mut speed = m.speed;
         if input.held_shift() {
             speed += m.boost;
-        }
-        else if input.held_control() {
+            input_flags |= PlayerInputFlags::SHIFT;
+        } else if input.held_control() {
             speed -= m.slow;
+            input_flags |= PlayerInputFlags::CTRL;
         }
 
         let mut cum_move = Vector3::new(0.0, 0.0, 0.0);
         if input.key_held(KeyCode::KeyW) {
             cum_move += forward * speed;
+            input_flags |= PlayerInputFlags::FORWARD;
         }
         if input.key_held(KeyCode::KeyS) {
             cum_move -= forward * speed;
+            input_flags |= PlayerInputFlags::BACK;
         }
         if input.key_held(KeyCode::KeyA) {
             cum_move -= right * speed;
+            input_flags |= PlayerInputFlags::LEFT;
         }
         if input.key_held(KeyCode::KeyD) {
             cum_move += right * speed;
+            input_flags |= PlayerInputFlags::RIGHT;
         }
 
-        return cum_move * delta;
+        return (cum_move * delta, input_flags);
     }
 }
