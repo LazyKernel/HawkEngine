@@ -2,13 +2,13 @@ use argh::FromArgs;
 use engine::{
     ecs::{
         components::{
-            general::{Camera, Movement, Transform},
+            general::{Camera, Movement, Renderable, Transform},
             physics::{ColliderComponent, ColliderRenderable, RigidBodyComponent},
         },
         resources::{physics::PhysicsData, ActiveCamera},
         utils::objects::create_terrain,
     },
-    start_engine, EngineFeatures, HawkEngine,
+    start_engine, EngineFeatures, HawkEngine, Renderer,
 };
 use log::error;
 use nalgebra::Vector3;
@@ -16,20 +16,15 @@ use rapier3d::{
     control::{CharacterLength, KinematicCharacterController},
     prelude::{ColliderBuilder, RigidBodyBuilder, RigidBodyType, SharedShape},
 };
-use specs::{Builder, WorldExt};
+use specs::{Builder, Entity, World, WorldExt};
 use winit::event_loop::EventLoop;
 
-fn init(engine: &mut HawkEngine) {
-    let world = &mut engine.ecs.world;
-
-    let renderer = match &engine.renderer {
-        Some(x) => x,
-        None => panic!("Renderer wasn't set when calling init"),
-    };
-
-    // Add physics stuff
-    let mut physics_data = PhysicsData::default();
-
+fn create_player(
+    world: &mut World,
+    physics_data: &mut PhysicsData,
+    renderer: &Renderer,
+    direct_control: bool,
+) {
     let character_controller = KinematicCharacterController {
         offset: CharacterLength::Relative(0.1),
         snap_to_ground: Some(CharacterLength::Relative(0.025)),
@@ -51,21 +46,14 @@ fn init(engine: &mut HawkEngine) {
         .build();
 
     let rigid_body_component =
-        RigidBodyComponent::new(rigid_body, &mut physics_data, Some(character_controller));
+        RigidBodyComponent::new(rigid_body, physics_data, Some(character_controller));
 
-    let collider = ColliderComponent::new(
-        collider,
-        Some(&rigid_body_component.handle),
-        &mut physics_data,
-    );
-    //let (v, i) = collider.get_vertices(&physics_data);
-    //let vert = ColliderRenderable::convert_to_vertex(v);
-    //let (vb, ib) = renderer.vulkan.create_vertex_buffers(vert, i);
+    let collider =
+        ColliderComponent::new(collider, Some(&rigid_body_component.handle), physics_data);
 
-    // Add a camera
-    let camera_entity = world
+    // Add a player
+    let player_builder = world
         .create_entity()
-        .with(Camera)
         .with(Transform {
             pos: Vector3::new(0.0, 15.0, 0.0),
             ..Default::default()
@@ -77,14 +65,43 @@ fn init(engine: &mut HawkEngine) {
             jump: 3000.0,
             sensitivity: 0.1,
             max_jumps: 2,
-            direct_control: true,
+            direct_control: direct_control,
             ..Default::default()
         })
-        .with(collider)
-        //.with(ColliderRenderable { vertex_buffer: (*vb).clone(), index_buffer: (*ib).clone() })
-        .with(rigid_body_component)
-        .build();
-    world.insert(ActiveCamera(camera_entity));
+        .with(rigid_body_component);
+
+    if !direct_control {
+        // get vertices from collider
+        let (v, i) = collider.get_vertices(&physics_data);
+        let vert = ColliderRenderable::convert_to_vertex(v);
+        // using viking_room as a temp texture
+        let model_name = "viking_room";
+
+        let renderable = renderer
+            .vulkan
+            .create_renderable_from_vertices(vert, i, model_name, None)
+            .expect("Could not create player renderable, cannot continue");
+
+        let player_entity = player_builder.with(collider).with(renderable).build();
+        world.insert(player_entity);
+    } else {
+        let player_entity = ActiveCamera(player_builder.with(collider).with(Camera).build());
+        world.insert(player_entity);
+    }
+}
+
+fn init(engine: &mut HawkEngine) {
+    let world = &mut engine.ecs.world;
+
+    let renderer = match &engine.renderer {
+        Some(x) => x,
+        None => panic!("Renderer wasn't set when calling init"),
+    };
+
+    // Add physics stuff
+    let mut physics_data = PhysicsData::default();
+
+    create_player(world, &mut physics_data, &renderer, true);
 
     // Add a terrain
     let (terrain_renderable, terrain_rigid_body, terrain_collider) =
