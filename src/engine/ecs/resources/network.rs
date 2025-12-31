@@ -69,6 +69,13 @@ impl Default for Player {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NewReplicatedData {
+    pub owner_id: Uuid,
+    pub entity_id: Uuid,
+    pub entity_type: String,
+}
+
 pub struct NetworkData {
     pub is_server: bool,
     pub sender: mpsc::Sender<NetworkPacketOut>,

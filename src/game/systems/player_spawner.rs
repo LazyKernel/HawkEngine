@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use engine::ecs::resources::network::MessageType;
+use engine::ecs::resources::network::{MessageType, NewReplicatedData};
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
 use specs::{shred::DynamicSystemData, System, WorldExt, Write};
@@ -47,15 +47,48 @@ impl<'a> System<'a> for PlayerSpawner {
                     MessageType::NewClient => {
                         match rmp_serde::from_slice::<NewClientData>(&v.data) {
                             Ok(data) => {
-                                if data.uuid != net_data.player_self.unwrap_or_default().client_id {
+                                if net_data.is_server {
                                     // TODO: create player
-                                } else {
-                                    // TODO: this is our player, add network replicated component
-                                    // to it
+                                    // server should direct the entity creation
                                 }
+
+                                // TODO: server should probably track NetworkReplicated components
+                                // automatically using a separate System
+                                // It should automatically send all existing NetworkReplicated
+                                // components to any new client connecting
                             }
                             Err(e) => {
                                 error!("Could not parse NewClientData in PlayerSpawner: {:?}", e)
+                            }
+                        }
+                    }
+                    MessageType::NewReplicated => {
+                        match rmp_serde::from_slice::<NewReplicatedData>(&v.data) {
+                            Ok(data) => {
+                                if net_data.is_server {
+                                    // server has already created any replicated entities
+                                    continue;
+                                }
+
+                                match data.entity_type.as_str() {
+                                    "Player" => {
+                                        if data.owner_id
+                                            == net_data.player_self.unwrap_or_default().client_id
+                                        {
+                                            // TODO: this is our player, add network replicated
+                                            // component
+                                        } else {
+                                            // TODO: spawn a new client
+                                        }
+                                    }
+                                    _ => {} // ignore others
+                                }
+                            }
+                            Err(e) => {
+                                error!(
+                                    "Could not parse NewReplicatedData in PlayerSpawner: {:?}",
+                                    e
+                                )
                             }
                         }
                     }
