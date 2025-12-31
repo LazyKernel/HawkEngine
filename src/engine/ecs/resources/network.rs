@@ -60,6 +60,15 @@ pub struct Player {
     pub last_keep_alive: Instant,
 }
 
+impl Default for Player {
+    fn default() -> Self {
+        Player {
+            client_id: Uuid::nil(),
+            last_keep_alive: Instant::now(),
+        }
+    }
+}
+
 pub struct NetworkData {
     pub is_server: bool,
     pub sender: mpsc::Sender<NetworkPacketOut>,

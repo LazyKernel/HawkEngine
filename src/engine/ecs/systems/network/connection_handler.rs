@@ -19,7 +19,7 @@ pub struct ConnectionAcceptData {
 }
 
 #[derive(Serialize, Deserialize)]
-struct NewClientData {
+pub struct NewClientData {
     pub name: String,
     pub uuid: Uuid,
 }
@@ -196,7 +196,6 @@ impl<'a> System<'a> for ConnectionHandler {
     }
 
     fn setup(&mut self, world: &mut specs::World) {
-        info!("setup generic connection handler");
         <Self::SystemData as DynamicSystemData>::setup(&self.accessor(), world);
         let net_data = world.read_resource::<NetworkData>();
         self.receiver = net_data.in_packets_sender.subscribe();

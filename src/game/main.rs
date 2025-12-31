@@ -1,3 +1,5 @@
+mod systems;
+
 use argh::FromArgs;
 use engine::{
     ecs::{
