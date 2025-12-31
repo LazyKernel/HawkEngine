@@ -183,7 +183,7 @@ pub async fn client_loop(
         // collect all messages, up to a cap so we can't stall
         let mut n_recv = 0;
         while !tokio_to_game_receiver.is_empty() && n_recv < 10000 {
-            println!("Trying to receive");
+            trace!("Trying to receive");
             if let Ok(data) = tokio_to_game_receiver.try_recv() {
                 // NOTE: grabbing our assigned client id here, not ideal
                 if data.packet.message_type == MessageType::ConnectionAccept {
@@ -216,7 +216,7 @@ pub async fn client_loop(
         // collect all messages, up to a cap so we can't stall
         let mut n_recv_udp = 0;
         while !tokio_to_game_receiver_udp.is_empty() && n_recv_udp < 10000 {
-            println!("Trying to receive udp");
+            trace!("Trying to receive udp");
             if let Ok(data) = tokio_to_game_receiver_udp.try_recv() {
                 if let Err(e) = sender.send(NetworkPacketIn {
                     client: client.clone(),

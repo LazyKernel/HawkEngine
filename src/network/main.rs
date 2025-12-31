@@ -1,13 +1,30 @@
-use std::{collections::HashMap, env, io, net::{IpAddr, SocketAddr}, sync::Arc, time::Instant};
 use log::{error, info, trace, warn};
-use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::{tcp::{OwnedReadHalf, OwnedWriteHalf}, TcpListener, TcpStream, UdpSocket}, sync::{broadcast::{self}, mpsc::{self}, RwLock}};
+use serde::{Deserialize, Serialize};
+use std::{
+    collections::HashMap,
+    env, io,
+    net::{IpAddr, SocketAddr},
+    sync::Arc,
+    time::Instant,
+};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::{
+        tcp::{OwnedReadHalf, OwnedWriteHalf},
+        TcpListener, TcpStream, UdpSocket,
+    },
+    sync::{
+        broadcast::{self},
+        mpsc::{self},
+        RwLock,
+    },
+};
 use uuid::Uuid;
-use serde::{Serialize, Deserialize};
 
 struct Client {
     client_id: Uuid,
     addr: SocketAddr,
-    last_keep_alive: Instant
+    last_keep_alive: Instant,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -22,24 +39,24 @@ enum NetworkMessageType {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct NetworkMessagePacket {
     message_type: NetworkMessageType,
-    payload: Vec<u8>
+    payload: Vec<u8>,
 }
 
 #[derive(Clone, Debug)]
 struct NetworkMessage {
     addr: SocketAddr,
-    packet: NetworkMessagePacket
+    packet: NetworkMessagePacket,
 }
 
 #[derive(Serialize, Deserialize)]
 struct ConnectionAccepted {
-    client_id: Uuid, 
+    client_id: Uuid,
     server_version: String,
 }
 
 #[derive(Serialize, Deserialize)]
 struct Increment {
-    value: u64
+    value: u64,
 }
 
 impl Client {
@@ -47,34 +64,48 @@ impl Client {
         Self {
             client_id: Uuid::new_v4(),
             addr: addr,
-            last_keep_alive: Instant::now()
+            last_keep_alive: Instant::now(),
         }
     }
 }
 
-fn build_network_message<T: Serialize>(message_type: NetworkMessageType, payload: Option<T>) -> Result<NetworkMessagePacket, rmp_serde::encode::Error> {
+fn build_network_message<T: Serialize>(
+    message_type: NetworkMessageType,
+    payload: Option<T>,
+) -> Result<NetworkMessagePacket, rmp_serde::encode::Error> {
     Ok(NetworkMessagePacket {
         message_type: message_type,
         payload: match payload {
             Some(v) => rmp_serde::to_vec(&v)?,
             None => Vec::<u8>::default(),
-        }
+        },
     })
 }
 
-async fn server_handle_connect(clients: Arc<RwLock<HashMap<IpAddr, Client>>>, addr: SocketAddr) -> NetworkMessagePacket {
+async fn server_handle_connect(
+    clients: Arc<RwLock<HashMap<IpAddr, Client>>>,
+    addr: SocketAddr,
+) -> NetworkMessagePacket {
     let client = Client::new(addr);
 
     println!("New client connected with ID: {}", client.client_id);
 
-    let conn_acc = ConnectionAccepted {client_id: client.client_id, server_version: "0.0.1".into()};
-    let conn_acc_msg = build_network_message(NetworkMessageType::ConnectionAccept, Some(conn_acc)).expect("Could not serialize ConnectionAccept");
+    let conn_acc = ConnectionAccepted {
+        client_id: client.client_id,
+        server_version: "0.0.1".into(),
+    };
+    let conn_acc_msg = build_network_message(NetworkMessageType::ConnectionAccept, Some(conn_acc))
+        .expect("Could not serialize ConnectionAccept");
     clients.write().await.insert(addr.ip(), client);
 
     return conn_acc_msg;
 }
 
-async fn server_read_task(addr: SocketAddr, mut rx_socket: OwnedReadHalf, tokio_to_game_sender: mpsc::Sender<NetworkMessage>) {
+async fn server_read_task(
+    addr: SocketAddr,
+    mut rx_socket: OwnedReadHalf,
+    tokio_to_game_sender: mpsc::Sender<NetworkMessage>,
+) {
     let mut buf = [0u8; 512];
 
     loop {
@@ -83,20 +114,29 @@ async fn server_read_task(addr: SocketAddr, mut rx_socket: OwnedReadHalf, tokio_
                 trace!("Read n bytes: {:?}", num_bytes);
                 match rmp_serde::from_slice::<NetworkMessagePacket>(&buf[..num_bytes]) {
                     Ok(v) => {
-                        if let Err(e) = tokio_to_game_sender.send(NetworkMessage { addr: addr, packet: v }).await {
+                        if let Err(e) = tokio_to_game_sender
+                            .send(NetworkMessage {
+                                addr: addr,
+                                packet: v,
+                            })
+                            .await
+                        {
                             error!("Error occurred while trying to pass packet from task, the queue might be full: {:?}", e);
                         }
-                    },
+                    }
                     Err(e) => error!("Error parsing received buffer: {:?}", e),
                 }
-            },
+            }
             Err(e) => error!("Error reading socket: {:?}", e),
         }
     }
 }
 
-
-async fn server_send_task(addr: SocketAddr, mut tx_socket: OwnedWriteHalf, mut game_to_tokio_receiver: broadcast::Receiver<NetworkMessage>) {
+async fn server_send_task(
+    addr: SocketAddr,
+    mut tx_socket: OwnedWriteHalf,
+    mut game_to_tokio_receiver: broadcast::Receiver<NetworkMessage>,
+) {
     loop {
         match game_to_tokio_receiver.recv().await {
             Ok(data) => {
@@ -108,46 +148,58 @@ async fn server_send_task(addr: SocketAddr, mut tx_socket: OwnedWriteHalf, mut g
                             if let Err(e) = tx_socket.write_all(v.as_slice()).await {
                                 error!("Could not write to socket: {:?}", e);
                             }
-                        },
+                        }
                         Err(e) => error!("Could not serialize data: {:?}", e),
                     }
                 }
-            },
+            }
             Err(e) => error!("Error receiving data in async task: {:?}", e),
         }
     }
 }
 
-
-async fn server_read_task_udp(clients: Arc<RwLock<HashMap<IpAddr, Client>>>, socket: Arc<UdpSocket>, tokio_to_game_sender: mpsc::Sender<NetworkMessage>) {
+async fn server_read_task_udp(
+    clients: Arc<RwLock<HashMap<IpAddr, Client>>>,
+    socket: Arc<UdpSocket>,
+    tokio_to_game_sender: mpsc::Sender<NetworkMessage>,
+) {
     let mut buf = [0u8; 512];
 
     loop {
         match socket.recv_from(&mut buf[..]).await {
             Ok((num_bytes, addr)) => {
                 trace!("Read n bytes from {:?}: {:?}", addr, num_bytes);
-                
+
                 // ignore if the client isn't connected
-                // TODO: need to encrypt udp traffic at some point 
+                // TODO: need to encrypt udp traffic at some point
                 if !clients.read().await.contains_key(&addr.ip()) {
                     continue;
                 }
 
                 match rmp_serde::from_slice::<NetworkMessagePacket>(&buf[..num_bytes]) {
                     Ok(v) => {
-                        if let Err(e) = tokio_to_game_sender.send(NetworkMessage { addr: addr, packet: v }).await {
+                        if let Err(e) = tokio_to_game_sender
+                            .send(NetworkMessage {
+                                addr: addr,
+                                packet: v,
+                            })
+                            .await
+                        {
                             error!("Error occurred while trying to pass packet from task, the queue might be full: {:?}", e);
                         }
-                    },
+                    }
                     Err(e) => error!("Error parsing received buffer: {:?}", e),
                 }
-            },
+            }
             Err(e) => error!("Error reading socket: {:?}", e),
         }
     }
 }
 
-async fn server_send_task_udp(socket: Arc<UdpSocket>, mut game_to_tokio_receiver: mpsc::Receiver<NetworkMessage>) {
+async fn server_send_task_udp(
+    socket: Arc<UdpSocket>,
+    mut game_to_tokio_receiver: mpsc::Receiver<NetworkMessage>,
+) {
     loop {
         match game_to_tokio_receiver.recv().await {
             Some(data) => {
@@ -157,16 +209,14 @@ async fn server_send_task_udp(socket: Arc<UdpSocket>, mut game_to_tokio_receiver
                         if let Err(e) = socket.send_to(v.as_slice(), data.addr).await {
                             error!("Could not write to socket: {:?}", e);
                         }
-                    },
+                    }
                     Err(e) => error!("Could not serialize data: {:?}", e),
                 }
-            },
+            }
             None => error!("Error receiving data in async task (udp), the channel might be closed"),
         }
     }
 }
-
-
 
 async fn server() {
     let tcp_listener = TcpListener::bind("127.0.0.1:6782").await.unwrap();
@@ -176,14 +226,16 @@ async fn server() {
     let clients: Arc<RwLock<HashMap<IpAddr, Client>>> = Default::default();
 
     let (tokio_to_game_sender, mut tokio_to_game_receiver) = mpsc::channel::<NetworkMessage>(16384);
-    let (game_to_tokio_sender, game_to_tokio_receiver) = broadcast::channel::<NetworkMessage>(16384);
+    let (game_to_tokio_sender, game_to_tokio_receiver) =
+        broadcast::channel::<NetworkMessage>(16384);
 
-    let (tokio_to_game_sender_udp, mut tokio_to_game_receiver_udp) = mpsc::channel::<NetworkMessage>(16384);
-    let (game_to_tokio_sender_udp, game_to_tokio_receiver_udp) = mpsc::channel::<NetworkMessage>(16384);
+    let (tokio_to_game_sender_udp, mut tokio_to_game_receiver_udp) =
+        mpsc::channel::<NetworkMessage>(16384);
+    let (game_to_tokio_sender_udp, game_to_tokio_receiver_udp) =
+        mpsc::channel::<NetworkMessage>(16384);
 
     let receiver_generator = game_to_tokio_sender.clone();
     drop(game_to_tokio_receiver);
-
 
     tokio::spawn(async move {
         loop {
@@ -199,22 +251,24 @@ async fn server() {
 
             // sending to this client
             let rx = receiver_generator.subscribe();
-            tokio::spawn(async move { server_send_task(addr, tx_socket, rx).await } );
-
+            tokio::spawn(async move { server_send_task(addr, tx_socket, rx).await });
         }
     });
-    
+
     let udp_sock_rx = udp_socket_arc.clone();
     let udp_sock_tx = udp_socket_arc.clone();
     let clients_ref = clients.clone();
-    tokio::spawn(async move { server_read_task_udp(clients_ref, udp_sock_rx, tokio_to_game_sender_udp).await });
-    tokio::spawn(async move { server_send_task_udp(udp_sock_tx, game_to_tokio_receiver_udp).await });
+    tokio::spawn(async move {
+        server_read_task_udp(clients_ref, udp_sock_rx, tokio_to_game_sender_udp).await
+    });
+    tokio::spawn(
+        async move { server_send_task_udp(udp_sock_tx, game_to_tokio_receiver_udp).await },
+    );
 
     let mut inc = 0;
 
     // NOTE: this would be run once per frame in the update loop
     loop {
-
         // collect all messages, up to a cap so we can't stall
         let mut n_recv = 0;
         while !tokio_to_game_receiver.is_empty() && n_recv < 10000 {
@@ -223,14 +277,18 @@ async fn server() {
                 Ok(data) => {
                     match data.packet.message_type {
                         NetworkMessageType::ConnectionRequest => {
-                            let conn_acc_msg = server_handle_connect(clients.clone(), data.addr).await;
-                            if let Err(e) = game_to_tokio_sender.send(NetworkMessage { addr: data.addr, packet: conn_acc_msg }) {
+                            let conn_acc_msg =
+                                server_handle_connect(clients.clone(), data.addr).await;
+                            if let Err(e) = game_to_tokio_sender.send(NetworkMessage {
+                                addr: data.addr,
+                                packet: conn_acc_msg,
+                            }) {
                                 error!("Could not send message to broadcast queue, might be full: {:?}", e);
                             }
-                        },
+                        }
                         _ => warn!("Unsupported message type: {:?}", data.packet.message_type),
                     }
-                },
+                }
                 Err(e) => error!("Error tryingto receive from tokio: {:?}", e),
             }
 
@@ -241,17 +299,25 @@ async fn server() {
         while !tokio_to_game_receiver_udp.is_empty() && n_recv_udp < 10000 {
             trace!("Trying to receive udp");
             match tokio_to_game_receiver_udp.try_recv() {
-                Ok(data) => {
-                    match data.packet.message_type {
-                        NetworkMessageType::IncrementRequest => {
-                            let increment_packet = rmp_serde::from_slice::<Increment>(&data.packet.payload).unwrap();
-                            inc += increment_packet.value;
-                            info!("Increment: {:?}", inc);
-                            let msg = build_network_message(NetworkMessageType::IncrementResponse, Some(Increment{value: inc})).expect("Could not serialize ConnectionAccept");
-                            let _ = game_to_tokio_sender_udp.send(NetworkMessage { addr: data.addr, packet: msg }).await;
-                        },
-                        _ => warn!("Unsupported message type: {:?}", data.packet.message_type),
+                Ok(data) => match data.packet.message_type {
+                    NetworkMessageType::IncrementRequest => {
+                        let increment_packet =
+                            rmp_serde::from_slice::<Increment>(&data.packet.payload).unwrap();
+                        inc += increment_packet.value;
+                        info!("Increment: {:?}", inc);
+                        let msg = build_network_message(
+                            NetworkMessageType::IncrementResponse,
+                            Some(Increment { value: inc }),
+                        )
+                        .expect("Could not serialize ConnectionAccept");
+                        let _ = game_to_tokio_sender_udp
+                            .send(NetworkMessage {
+                                addr: data.addr,
+                                packet: msg,
+                            })
+                            .await;
                     }
+                    _ => warn!("Unsupported message type: {:?}", data.packet.message_type),
                 },
                 Err(e) => error!("Error tryingto receive from tokio (udp): {:?}", e),
             }
@@ -261,14 +327,22 @@ async fn server() {
     }
 }
 
-
-fn client_handle_connect(local_addr: SocketAddr, packet: &NetworkMessagePacket) -> Result<Client, rmp_serde::decode::Error> {
+fn client_handle_connect(
+    local_addr: SocketAddr,
+    packet: &NetworkMessagePacket,
+) -> Result<Client, rmp_serde::decode::Error> {
     let accept_data = rmp_serde::from_slice::<ConnectionAccepted>(&packet.payload)?;
-    Ok(Client { addr: local_addr, client_id: accept_data.client_id, last_keep_alive: Instant::now() })
+    Ok(Client {
+        addr: local_addr,
+        client_id: accept_data.client_id,
+        last_keep_alive: Instant::now(),
+    })
 }
 
-
-async fn client_send_task(mut tx_socket: OwnedWriteHalf, mut game_to_tokio_receiver: mpsc::Receiver<NetworkMessage>) {
+async fn client_send_task(
+    mut tx_socket: OwnedWriteHalf,
+    mut game_to_tokio_receiver: mpsc::Receiver<NetworkMessage>,
+) {
     loop {
         if let Some(data) = game_to_tokio_receiver.recv().await {
             trace!("Writing data: {:?}", data);
@@ -277,11 +351,10 @@ async fn client_send_task(mut tx_socket: OwnedWriteHalf, mut game_to_tokio_recei
                     if let Err(e) = tx_socket.write_all(v.as_slice()).await {
                         error!("Could not write to socket: {:?}", e);
                     }
-                },
+                }
                 Err(e) => error!("Could not serialize data: {:?}", e),
             }
-        }
-        else {
+        } else {
             // the channel has been closed, exit
             trace!("The channel has closed, exiting loop");
             break;
@@ -289,8 +362,10 @@ async fn client_send_task(mut tx_socket: OwnedWriteHalf, mut game_to_tokio_recei
     }
 }
 
-
-async fn client_read_task(mut rx_socket: OwnedReadHalf, tokio_to_game_sender: mpsc::Sender<NetworkMessage>) {
+async fn client_read_task(
+    mut rx_socket: OwnedReadHalf,
+    tokio_to_game_sender: mpsc::Sender<NetworkMessage>,
+) {
     let mut buf = [0u8; 512];
 
     loop {
@@ -298,39 +373,58 @@ async fn client_read_task(mut rx_socket: OwnedReadHalf, tokio_to_game_sender: mp
             trace!("Read n bytes: {:?}", num_bytes);
             match rmp_serde::from_slice::<NetworkMessagePacket>(&buf[..num_bytes]) {
                 Ok(v) => {
-                    if let Err(e) = tokio_to_game_sender.send(NetworkMessage { addr: rx_socket.peer_addr().unwrap(), packet: v }).await {
+                    if let Err(e) = tokio_to_game_sender
+                        .send(NetworkMessage {
+                            addr: rx_socket.peer_addr().unwrap(),
+                            packet: v,
+                        })
+                        .await
+                    {
                         error!("Error occurred while trying to pass packet from task, the queue might be full: {:?}", e);
                     }
-                },
+                }
                 Err(e) => error!("Error parsing received buffer: {:?}", e),
             }
         }
     }
 }
 
-async fn client_read_task_udp(addr: SocketAddr, socket: Arc<UdpSocket>, tokio_to_game_sender: mpsc::Sender<NetworkMessage>) {
+async fn client_read_task_udp(
+    addr: SocketAddr,
+    socket: Arc<UdpSocket>,
+    tokio_to_game_sender: mpsc::Sender<NetworkMessage>,
+) {
     let mut buf = [0u8; 512];
 
     loop {
         match socket.recv(&mut buf[..]).await {
             Ok(num_bytes) => {
                 trace!("Read n bytes: {:?}", num_bytes);
-                
+
                 match rmp_serde::from_slice::<NetworkMessagePacket>(&buf[..num_bytes]) {
                     Ok(v) => {
-                        if let Err(e) = tokio_to_game_sender.send(NetworkMessage { addr: addr, packet: v }).await {
+                        if let Err(e) = tokio_to_game_sender
+                            .send(NetworkMessage {
+                                addr: addr,
+                                packet: v,
+                            })
+                            .await
+                        {
                             error!("Error occurred while trying to pass packet from task, the queue might be full: {:?}", e);
                         }
-                    },
+                    }
                     Err(e) => error!("Error parsing received buffer: {:?}", e),
                 }
-            },
+            }
             Err(e) => error!("Error reading socket: {:?}", e),
         }
     }
 }
 
-async fn client_send_task_udp(socket: Arc<UdpSocket>, mut game_to_tokio_receiver: mpsc::Receiver<NetworkMessage>) {
+async fn client_send_task_udp(
+    socket: Arc<UdpSocket>,
+    mut game_to_tokio_receiver: mpsc::Receiver<NetworkMessage>,
+) {
     loop {
         match game_to_tokio_receiver.recv().await {
             Some(data) => {
@@ -340,27 +434,33 @@ async fn client_send_task_udp(socket: Arc<UdpSocket>, mut game_to_tokio_receiver
                         if let Err(e) = socket.send(v.as_slice()).await {
                             error!("Could not write to socket: {:?}", e);
                         }
-                    },
+                    }
                     Err(e) => error!("Could not serialize data: {:?}", e),
                 }
-            },
+            }
             None => error!("Error receiving data in async task (udp), the channel might be closed"),
         }
     }
 }
 
 async fn client() {
-    let tcp_stream = TcpStream::connect("127.0.0.1:6782").await.expect("Could not connect to server");
-    let udp_stream = UdpSocket::bind("127.0.0.1:0").await.expect("Could not connect to server over UDP");
+    let tcp_stream = TcpStream::connect("127.0.0.1:6782")
+        .await
+        .expect("Could not connect to server");
+    let udp_stream = UdpSocket::bind("127.0.0.1:0")
+        .await
+        .expect("Could not connect to server over UDP");
     let udp_sock_arc = Arc::new(udp_stream);
-    
+
     let mut client: Option<Client> = None;
 
     let (tokio_to_game_sender, mut tokio_to_game_receiver) = mpsc::channel::<NetworkMessage>(16384);
     let (game_to_tokio_sender, game_to_tokio_receiver) = mpsc::channel::<NetworkMessage>(16384);
 
-    let (tokio_to_game_sender_udp, mut tokio_to_game_receiver_udp) = mpsc::channel::<NetworkMessage>(16384);
-    let (game_to_tokio_sender_udp, game_to_tokio_receiver_udp) = mpsc::channel::<NetworkMessage>(16384);
+    let (tokio_to_game_sender_udp, mut tokio_to_game_receiver_udp) =
+        mpsc::channel::<NetworkMessage>(16384);
+    let (game_to_tokio_sender_udp, game_to_tokio_receiver_udp) =
+        mpsc::channel::<NetworkMessage>(16384);
 
     let local_addr = tcp_stream.local_addr().unwrap();
     let peer_addr = tcp_stream.peer_addr().unwrap();
@@ -373,16 +473,35 @@ async fn client() {
     let rx_socket_udp = udp_sock_arc.clone();
     let tx_socket_udp = udp_sock_arc.clone();
 
-    tokio::spawn(async move { client_send_task(tx_socket, game_to_tokio_receiver).await; });
-    tokio::spawn(async move { client_send_task_udp(tx_socket_udp, game_to_tokio_receiver_udp).await; });
+    tokio::spawn(async move {
+        client_send_task(tx_socket, game_to_tokio_receiver).await;
+    });
+    tokio::spawn(async move {
+        client_send_task_udp(tx_socket_udp, game_to_tokio_receiver_udp).await;
+    });
 
-    tokio::spawn(async move { client_read_task(rx_socket, tokio_to_game_sender).await; });
-    tokio::spawn(async move { client_read_task_udp(peer_addr, rx_socket_udp, tokio_to_game_sender_udp).await; });
+    tokio::spawn(async move {
+        client_read_task(rx_socket, tokio_to_game_sender).await;
+    });
+    tokio::spawn(async move {
+        client_read_task_udp(peer_addr, rx_socket_udp, tokio_to_game_sender_udp).await;
+    });
 
-
-    let msg = NetworkMessagePacket {message_type: NetworkMessageType::ConnectionRequest, payload: vec![]};
-    if let Err(err) = game_to_tokio_sender.send(NetworkMessage { addr: peer_addr, packet: msg }).await {
-        error!("Failed to send connection package to network thread: {:?}", err);
+    let msg = NetworkMessagePacket {
+        message_type: NetworkMessageType::ConnectionRequest,
+        payload: vec![],
+    };
+    if let Err(err) = game_to_tokio_sender
+        .send(NetworkMessage {
+            addr: peer_addr,
+            packet: msg,
+        })
+        .await
+    {
+        error!(
+            "Failed to send connection package to network thread: {:?}",
+            err
+        );
     }
 
     let (tx, mut rx) = mpsc::channel::<String>(16);
@@ -397,14 +516,22 @@ async fn client() {
 
     // NOTE: this would be run once per frame in the update loop
     loop {
-
         while !rx.is_empty() {
             if let Ok(data) = rx.try_recv() {
                 match u64::from_str_radix(&data.trim(), 10) {
                     Ok(v) => {
-                        let msg = build_network_message(NetworkMessageType::IncrementRequest, Some(Increment { value: v })).unwrap();
-                        let _ = game_to_tokio_sender_udp.send(NetworkMessage { addr: peer_addr, packet: msg }).await;
-                    },
+                        let msg = build_network_message(
+                            NetworkMessageType::IncrementRequest,
+                            Some(Increment { value: v }),
+                        )
+                        .unwrap();
+                        let _ = game_to_tokio_sender_udp
+                            .send(NetworkMessage {
+                                addr: peer_addr,
+                                packet: msg,
+                            })
+                            .await;
+                    }
                     Err(e) => error!("Could not parse ({:?}) as int: {:?}", data, e),
                 }
             }
@@ -413,7 +540,7 @@ async fn client() {
         // collect all messages, up to a cap so we can't stall
         let mut n_recv = 0;
         while !tokio_to_game_receiver.is_empty() && n_recv < 10000 {
-            println!("Trying to receive");
+            trace!("Trying to receive");
             if let Ok(data) = tokio_to_game_receiver.try_recv() {
                 match data.packet.message_type {
                     NetworkMessageType::ConnectionAccept => {
@@ -421,10 +548,10 @@ async fn client() {
                             Ok(v) => {
                                 client = Some(v);
                                 println!("Connected with ID: {}", client.unwrap().client_id);
-                            },
+                            }
                             Err(e) => error!("Failed to parse ConnectionAccept payload: {:?}", e),
                         }
-                    },
+                    }
                     _ => warn!("Unsupported message type: {:?}", data.packet.message_type),
                 }
             }
@@ -432,17 +559,17 @@ async fn client() {
             n_recv += 1;
         }
 
-
         // collect all messages, up to a cap so we can't stall
         let mut n_recv_udp = 0;
         while !tokio_to_game_receiver_udp.is_empty() && n_recv_udp < 10000 {
-            println!("Trying to receive");
+            trace!("Trying to receive");
             if let Ok(data) = tokio_to_game_receiver_udp.try_recv() {
                 match data.packet.message_type {
                     NetworkMessageType::IncrementResponse => {
-                        let increment = rmp_serde::from_slice::<Increment>(&data.packet.payload).unwrap();
+                        let increment =
+                            rmp_serde::from_slice::<Increment>(&data.packet.payload).unwrap();
                         println!("New increment value: {:?}", increment.value);
-                    },
+                    }
                     _ => warn!("Unsupported message type: {:?}", data.packet.message_type),
                 }
             }
@@ -451,7 +578,6 @@ async fn client() {
         }
     }
 }
-
 
 #[tokio::main]
 async fn main() {
@@ -463,8 +589,7 @@ async fn main() {
 
     if args.contains(&"--server".to_string()) || args.contains(&"-s".to_string()) {
         server().await;
-    }
-    else {
+    } else {
         client().await;
     }
 }

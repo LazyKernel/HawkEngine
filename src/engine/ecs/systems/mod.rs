@@ -6,13 +6,3 @@ pub mod general;
 pub mod network;
 pub mod physics;
 pub mod render;
-
-// systems wanting to have access to sending and receiving
-// network messages should extend NetworkMessenger
-pub struct NetworkMessenger {
-    // broadcast sender
-    sender: Sender<NetworkPacketOut>,
-    // broadcast receiver, please iterate through all available
-    // packets every frame
-    receiver: Receiver<NetworkPacketIn>,
-}

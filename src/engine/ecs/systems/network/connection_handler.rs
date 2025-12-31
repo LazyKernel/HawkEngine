@@ -2,7 +2,7 @@ use std::time::Instant;
 
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
-use specs::{System, WorldExt, Write};
+use specs::{shred::DynamicSystemData, System, WorldExt, Write};
 use tokio::sync::broadcast;
 use uuid::Uuid;
 
@@ -196,6 +196,8 @@ impl<'a> System<'a> for ConnectionHandler {
     }
 
     fn setup(&mut self, world: &mut specs::World) {
+        info!("setup generic connection handler");
+        <Self::SystemData as DynamicSystemData>::setup(&self.accessor(), world);
         let net_data = world.read_resource::<NetworkData>();
         self.receiver = net_data.in_packets_sender.subscribe();
     }

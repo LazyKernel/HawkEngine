@@ -1,8 +1,14 @@
 use specs::{World, WorldExt};
 
-use crate::ecs::components::general::{Transform, Renderable};
+use crate::ecs::components::{
+    general::{Renderable, Transform},
+    network::NetworkReplicated,
+};
 
-use self::components::{general::{Camera, Movement, Wireframe}, physics::{RigidBodyComponent, ColliderComponent, ColliderRenderable}};
+use self::components::{
+    general::{Camera, Movement, Wireframe},
+    physics::{ColliderComponent, ColliderRenderable, RigidBodyComponent},
+};
 
 pub mod components;
 pub mod resources;
@@ -10,14 +16,14 @@ pub mod systems;
 pub mod utils;
 
 pub struct ECS {
-    pub world: World
+    pub world: World,
 }
 
 impl ECS {
     pub fn new() -> Self {
         let mut world = World::new();
         ECS::register_components(&mut world);
-        return Self { world }
+        return Self { world };
     }
 
     fn register_components(world: &mut World) {
@@ -29,5 +35,8 @@ impl ECS {
         world.register::<ColliderComponent>();
         world.register::<Wireframe>();
         world.register::<ColliderRenderable>();
+
+        // network
+        world.register::<NetworkReplicated>();
     }
 }

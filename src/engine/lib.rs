@@ -20,6 +20,7 @@ mod shaders;
 pub use graphics::renderer::Renderer;
 pub use graphics::window::WindowState;
 
+use bitflags::bitflags;
 use ecs::systems::general::PlayerInput;
 use ecs::systems::physics::Physics;
 use ecs::systems::render::Render;
@@ -29,11 +30,21 @@ use specs::{Dispatcher, DispatcherBuilder, WorldExt};
 use winit::event_loop::EventLoop;
 
 use crate::{
-    ecs::systems::network::connection_handler::ConnectionHandler,
+    ecs::systems::network::{
+        connection_handler::ConnectionHandler, generic_replicated_handler::GenericHandler,
+        player_handler::PlayerHandler,
+    },
     network::tokio::start_network_thread,
 };
 
 pub type PostInitFn = fn(&mut HawkEngine<'_>);
+
+bitflags! {
+    pub struct EngineFeatures: u8 {
+        const PHYSICS = 1;
+        const NETWORK = 1 << 1;
+    }
+}
 
 pub struct HawkEngine<'a> {
     pub renderer: Option<Renderer>,
@@ -47,8 +58,9 @@ pub struct HawkEngine<'a> {
 impl<'a> HawkEngine<'a> {
     /*
     If use_physics is true, PhysicsData is expected to be provided as a resource
+    If use_networking is true, expecting start_network_thread to be called at some point
     */
-    pub fn new(use_physics: bool) -> Self {
+    pub fn new(enabled_features: EngineFeatures) -> Self {
         match pretty_env_logger::try_init() {
             Ok(_) => {}
             Err(e) => trace!(
@@ -62,8 +74,22 @@ impl<'a> HawkEngine<'a> {
 
         let mut dbuilder = DispatcherBuilder::new();
 
-        if use_physics {
+        if enabled_features.contains(EngineFeatures::PHYSICS) {
             dbuilder.add(Physics::default(), "physics", &[]);
+        }
+
+        if enabled_features.contains(EngineFeatures::NETWORK) {
+            dbuilder.add(
+                GenericHandler::default(),
+                "replicated_handler",
+                &["physics"],
+            );
+            dbuilder.add(
+                PlayerHandler::default(),
+                "player_handler",
+                &["replicated_handler"],
+            );
+            dbuilder.add(ConnectionHandler::default(), "connection_handler", &[]);
         }
 
         let dispatcher = dbuilder
@@ -79,6 +105,7 @@ impl<'a> HawkEngine<'a> {
             .with_thread_local(PlayerInput)
             .with_thread_local(Render)
             .build();
+
         let dispatchers = vec![dispatcher];
 
         return Self {
@@ -104,6 +131,11 @@ impl<'a> HawkEngine<'a> {
             .clone()
             .into_iter()
             .for_each(|x| x(self));
+
+        // setup dispatchers
+        for dispatcher in self.dispatchers.iter_mut() {
+            dispatcher.setup(&mut self.ecs.world);
+        }
     }
 
     pub fn start_networking(&mut self, address: &str, port: u16, server: bool) {
@@ -111,11 +143,6 @@ impl<'a> HawkEngine<'a> {
             Some(netdata) => self.ecs.world.insert(netdata),
             None => warn!("Network data received from start_network_thread was None"),
         }
-
-        let mut dbuilder = DispatcherBuilder::new();
-        dbuilder.add(ConnectionHandler::default(), "connection_handler", &[]);
-        let network_dispatch = dbuilder.build();
-        self.add_dispatcher(network_dispatch);
     }
 }
 

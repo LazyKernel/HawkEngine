@@ -8,7 +8,7 @@ use engine::{
         resources::{physics::PhysicsData, ActiveCamera},
         utils::objects::create_terrain,
     },
-    start_engine, HawkEngine,
+    start_engine, EngineFeatures, HawkEngine,
 };
 use log::error;
 use nalgebra::Vector3;
@@ -58,9 +58,9 @@ fn init(engine: &mut HawkEngine) {
         Some(&rigid_body_component.handle),
         &mut physics_data,
     );
-    let (v, i) = collider.get_vertices(&physics_data);
-    let vert = ColliderRenderable::convert_to_vertex(v);
-    let (vb, ib) = renderer.vulkan.create_vertex_buffers(vert, i);
+    //let (v, i) = collider.get_vertices(&physics_data);
+    //let vert = ColliderRenderable::convert_to_vertex(v);
+    //let (vb, ib) = renderer.vulkan.create_vertex_buffers(vert, i);
 
     // Add a camera
     let camera_entity = world
@@ -100,7 +100,7 @@ fn init(engine: &mut HawkEngine) {
                 Some(&terrain_rb_comp.handle),
                 &mut physics_data,
             );
-            let a = 0;
+
             let (ve, i) = collider.get_vertices(&physics_data);
             let vert = ColliderRenderable::convert_to_vertex(ve);
             let (vb, ib) = renderer.vulkan.create_vertex_buffers(vert, i);
@@ -166,7 +166,7 @@ struct GameArgs {
 fn main() {
     let args: GameArgs = argh::from_env();
     let event_loop = EventLoop::new().expect("Could not create event loop");
-    let mut engine = HawkEngine::new(true);
+    let mut engine = HawkEngine::new(EngineFeatures::PHYSICS | EngineFeatures::NETWORK);
 
     engine.add_post_init_fn(init);
 

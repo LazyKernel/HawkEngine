@@ -2,7 +2,9 @@ use std::collections::HashMap;
 
 use log::{error, warn};
 use serde::{Deserialize, Serialize};
-use specs::{Join, Read, ReadStorage, System, WorldExt as _, WriteStorage};
+use specs::{
+    shred::DynamicSystemData, Join, Read, ReadStorage, System, WorldExt as _, WriteStorage,
+};
 use tokio::sync::broadcast;
 use uuid::Uuid;
 
@@ -122,6 +124,7 @@ impl<'a> System<'a> for GenericHandler {
     }
 
     fn setup(&mut self, world: &mut specs::World) {
+        <Self::SystemData as DynamicSystemData>::setup(&self.accessor(), world);
         let net_data = world.read_resource::<NetworkData>();
         self.receiver = net_data.in_packets_sender.subscribe();
     }
