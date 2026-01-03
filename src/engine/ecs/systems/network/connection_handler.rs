@@ -2,13 +2,17 @@ use std::time::Instant;
 
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
-use specs::{shred::DynamicSystemData, System, WorldExt, Write};
+use specs::{shred::DynamicSystemData, Join, Read, ReadStorage, System, WorldExt, Write};
 use tokio::sync::broadcast;
 use uuid::Uuid;
 
 use crate::{
-    ecs::resources::network::{
-        MessageType, NetworkData, NetworkPacketIn, NetworkPacketOut, NetworkProtocol, Player,
+    ecs::{
+        components::network::NetworkReplicated,
+        resources::network::{
+            MessageType, NetworkData, NetworkPacketIn, NetworkPacketOut, NetworkProtocol,
+            NewReplicatedData, Player,
+        },
     },
     network::constants::KEEP_ALIVE_INTERVAL,
 };
@@ -39,9 +43,12 @@ impl Default for ConnectionHandler {
 }
 
 impl<'a> System<'a> for ConnectionHandler {
-    type SystemData = (Option<Write<'a, NetworkData>>,);
+    type SystemData = (
+        Option<Write<'a, NetworkData>>,
+        ReadStorage<'a, NetworkReplicated>,
+    );
 
-    fn run(&mut self, (network_data,): Self::SystemData) {
+    fn run(&mut self, (network_data, replicated): Self::SystemData) {
         let mut net_data = match network_data {
             Some(v) => v,
             None => {
@@ -130,6 +137,18 @@ impl<'a> System<'a> for ConnectionHandler {
                                         client_id: acc.uuid,
                                         last_keep_alive: Instant::now(),
                                     });
+
+                                    if let Err(e) = net_data.sender.try_send(NetworkPacketOut {
+                                        net_id: acc.uuid,
+                                        message_type: MessageType::InitGameStateRequest,
+                                        protocol: NetworkProtocol::TCP,
+                                        data: vec![],
+                                    }) {
+                                        error!(
+                                            "Could not send InitGameStateRequest to tokio: {:?}",
+                                            e
+                                        );
+                                    }
                                 }
                                 Err(e) => {
                                     error!(
@@ -140,6 +159,31 @@ impl<'a> System<'a> for ConnectionHandler {
                             }
                         } else {
                             warn!("Server somehow got a ConnectionAccept packet???");
+                        }
+                    }
+                    MessageType::InitGameStateRequest => {
+                        if net_data.is_server {
+                            for rep in replicated.join() {
+                                match rmp_serde::to_vec::<NewReplicatedData>(&NewReplicatedData {
+                                    owner_id: rep.owner_id,
+                                    entity_id: rep.net_id,
+                                    entity_type: rep.entity_type.clone(),
+                                }) {
+                                    Ok(data) => {
+                                        if let Err(e) = net_data.sender.try_send(NetworkPacketOut {
+                                            net_id: v.client.client_id,
+                                            message_type: MessageType::NewReplicated,
+                                            protocol: NetworkProtocol::TCP,
+                                            data: data,
+                                        }) {
+                                            error!("Could not send new replicated to tokio in InitGameStateRequest: {:?}", e);
+                                        }
+                                    }
+                                    Err(e) => error!("Could not serialize {:?}", e),
+                                }
+                            }
+                        } else {
+                            warn!("Client somehow got a request for Initial Game State");
                         }
                     }
                     _ => {} // we dont care

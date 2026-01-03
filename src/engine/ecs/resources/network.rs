@@ -15,6 +15,7 @@ pub enum MessageType {
     ConnectionKeepAlive,
     NewClient,
     NewReplicated,
+    InitGameStateRequest,
     ComponentTransform,
     ComponentCustom(String),
     ChatMessage,
@@ -27,9 +28,17 @@ pub enum NetworkProtocol {
     UDP,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub enum NetworkTarget {
+    Unknown,
+    Server,
+    Broadcast,
+    Client(Uuid),
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 pub struct NetworkPacketOut {
-    pub net_id: Uuid,
+    pub target: NetworkTarget,
     pub message_type: MessageType,
     pub protocol: NetworkProtocol,
     pub data: Vec<u8>,
@@ -38,7 +47,7 @@ pub struct NetworkPacketOut {
 impl Default for NetworkPacketOut {
     fn default() -> Self {
         NetworkPacketOut {
-            net_id: Uuid::nil(),
+            target: NetworkTarget::Unknown,
             message_type: MessageType::Unknown,
             protocol: NetworkProtocol::TCP,
             data: vec![],
