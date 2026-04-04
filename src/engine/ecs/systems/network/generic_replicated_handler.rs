@@ -11,7 +11,7 @@ use uuid::Uuid;
 use crate::ecs::{
     components::{general::Transform, network::NetworkReplicated},
     resources::network::{
-        MessageType, NetworkData, NetworkPacketIn, NetworkPacketOut, NetworkProtocol,
+        MessageType, NetworkData, NetworkPacketIn, NetworkPacketOut, NetworkProtocol, NetworkTarget,
     },
 };
 
@@ -102,7 +102,7 @@ impl<'a> System<'a> for GenericHandler {
                 }) {
                     Ok(v) => {
                         let message = NetworkPacketOut {
-                            net_id: net_rep.net_id,
+                            target: NetworkTarget::Client(net_rep.owner_id),
                             message_type: MessageType::ComponentTransform,
                             data: v,
                             protocol: NetworkProtocol::UDP,

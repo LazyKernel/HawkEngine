@@ -5,7 +5,9 @@ use std::{net::SocketAddr, sync::Arc};
 use log::{error, info, trace};
 use uuid::Uuid;
 
-use crate::ecs::resources::network::{NetworkPacketIn, NetworkPacketOut, NetworkProtocol};
+use crate::ecs::resources::network::{
+    NetworkPacketIn, NetworkPacketOut, NetworkProtocol, NetworkTarget,
+};
 use crate::network::tokio::Client;
 use crate::network::tokio::RawNetworkMessage;
 use crate::network::tokio::RawNetworkMessagePacket;
@@ -283,39 +285,74 @@ pub async fn server_loop(
         while !receiver.is_empty() {
             trace!("sending our data");
             match receiver.try_recv() {
-                Ok(packet) => {
-                    if let Some(client) = clients_net_id.read().await.get(&packet.net_id) {
-                        match packet.protocol {
-                            NetworkProtocol::TCP => {
-                                if let Err(e) = game_to_tokio_sender.send(RawNetworkMessage {
-                                    addr: client.addr,
-                                    packet: RawNetworkMessagePacket {
-                                        message_type: packet.message_type,
-                                        payload: packet.data,
-                                    },
-                                }) {
-                                    error!("Could not pass raw tcp message to tokio: {:?}", e);
-                                }
-                            }
-                            NetworkProtocol::UDP => {
-                                if let Err(e) = game_to_tokio_sender_udp
-                                    .send(RawNetworkMessage {
+                Ok(packet) => match packet.target {
+                    NetworkTarget::Client(c) => {
+                        if let Some(client) = clients_net_id.read().await.get(&c) {
+                            match packet.protocol {
+                                NetworkProtocol::TCP => {
+                                    if let Err(e) = game_to_tokio_sender.send(RawNetworkMessage {
                                         addr: client.addr,
                                         packet: RawNetworkMessagePacket {
                                             message_type: packet.message_type,
                                             payload: packet.data,
                                         },
-                                    })
-                                    .await
-                                {
-                                    error!("Could not pass raw udp message to tokio: {:?}", e);
+                                    }) {
+                                        error!("Could not pass raw tcp message to tokio: {:?}", e);
+                                    }
                                 }
-                            }
-                        };
-                    } else {
-                        error!("Client with net id {:?} does not exist!", packet.net_id);
+                                NetworkProtocol::UDP => {
+                                    if let Err(e) = game_to_tokio_sender_udp
+                                        .send(RawNetworkMessage {
+                                            addr: client.addr,
+                                            packet: RawNetworkMessagePacket {
+                                                message_type: packet.message_type,
+                                                payload: packet.data,
+                                            },
+                                        })
+                                        .await
+                                    {
+                                        error!("Could not pass raw udp message to tokio: {:?}", e);
+                                    }
+                                }
+                            };
+                        } else {
+                            error!("Client with net id {:?} does not exist!", c);
+                        }
                     }
-                }
+                    NetworkTarget::Broadcast => {
+                        for client in clients_net_id.read().await.values() {
+                            let p = packet.clone();
+                            match p.protocol {
+                                NetworkProtocol::TCP => {
+                                    if let Err(e) = game_to_tokio_sender.send(RawNetworkMessage {
+                                        addr: client.addr,
+                                        packet: RawNetworkMessagePacket {
+                                            message_type: p.message_type,
+                                            payload: p.data,
+                                        },
+                                    }) {
+                                        error!("Could not pass raw tcp message to tokio: {:?}", e);
+                                    }
+                                }
+                                NetworkProtocol::UDP => {
+                                    if let Err(e) = game_to_tokio_sender_udp
+                                        .send(RawNetworkMessage {
+                                            addr: client.addr,
+                                            packet: RawNetworkMessagePacket {
+                                                message_type: p.message_type,
+                                                payload: p.data,
+                                            },
+                                        })
+                                        .await
+                                    {
+                                        error!("Could not pass raw udp message to tokio: {:?}", e);
+                                    }
+                                }
+                            };
+                        }
+                    }
+                    other => error!("Server is expected to send data to {:?}", other),
+                },
                 Err(e) => error!("Error trying to receive data to send out: {:?}", e),
             }
         }

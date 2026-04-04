@@ -1,18 +1,24 @@
 use std::time::Instant;
 
-use engine::ecs::resources::network::{MessageType, NewReplicatedData};
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
-use specs::{shred::DynamicSystemData, System, WorldExt, Write};
+use specs::{shred::DynamicSystemData, ReadStorage, System, WorldExt, Write};
 use tokio::sync::broadcast;
 use uuid::Uuid;
 
-use engine::{
-    ecs::resources::network::{
-        MessageType, NetworkData, NetworkPacketIn, NetworkPacketOut, NetworkProtocol, Player,
+use engine::ecs::{
+    components::network::NetworkReplicated,
+    resources::{
+        network::{
+            MessageType, NetworkData, NetworkPacketIn, NetworkPacketOut, NetworkProtocol,
+            NewReplicatedData, Player,
+        },
+        ActiveCamera,
     },
-    ecs::systems::network::connection_handler::NewClientData,
+    systems::network::connection_handler::NewClientData,
 };
+
+use crate::create_player;
 
 // Spawns a new player on new client join
 
@@ -29,9 +35,13 @@ impl Default for PlayerSpawner {
 }
 
 impl<'a> System<'a> for PlayerSpawner {
-    type SystemData = (Option<Write<'a, NetworkData>>,);
+    type SystemData = (
+        Entities<'a>,
+        ReadStorage<'a, ActiveCamera>,
+        Option<Write<'a, NetworkData>>,
+    );
 
-    fn run(&mut self, (network_data,): Self::SystemData) {
+    fn run(&mut self, (entities, activecam, network_data): Self::SystemData) {
         let net_data = match network_data {
             Some(v) => v,
             None => {
@@ -48,14 +58,13 @@ impl<'a> System<'a> for PlayerSpawner {
                         match rmp_serde::from_slice::<NewClientData>(&v.data) {
                             Ok(data) => {
                                 if net_data.is_server {
-                                    // TODO: create player
-                                    // server should direct the entity creation
+                                    let id = create_player(world, physics_data, renderer, false);
+                                    entities.get(id).insert(NetworkReplicated {
+                                        owner_id: data.uuid,
+                                        net_id: Uuid::new_v4(),
+                                        entity_type: "Player".into(),
+                                    });
                                 }
-
-                                // TODO: server should probably track NetworkReplicated components
-                                // automatically using a separate System
-                                // It should automatically send all existing NetworkReplicated
-                                // components to any new client connecting
                             }
                             Err(e) => {
                                 error!("Could not parse NewClientData in PlayerSpawner: {:?}", e)
@@ -75,10 +84,15 @@ impl<'a> System<'a> for PlayerSpawner {
                                         if data.owner_id
                                             == net_data.player_self.unwrap_or_default().client_id
                                         {
-                                            // TODO: this is our player, add network replicated
-                                            // component
+                                            for (e, c) in (&entities, &activecam).join() {
+                                                e.insert(NetworkReplicated {
+                                                    owner_id: data.owner_id,
+                                                    net_id: data.entity_id,
+                                                    entity_type: data.entity_type,
+                                                });
+                                            }
                                         } else {
-                                            // TODO: spawn a new client
+                                            create_player(world, physics_data, renderer, false);
                                         }
                                     }
                                     _ => {} // ignore others

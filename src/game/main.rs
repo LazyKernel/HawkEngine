@@ -18,7 +18,7 @@ use rapier3d::{
     control::{CharacterLength, KinematicCharacterController},
     prelude::{ColliderBuilder, RigidBodyBuilder, RigidBodyType, SharedShape},
 };
-use specs::{Builder, Entity, World, WorldExt};
+use specs::{world::Index, Builder, Entity, World, WorldExt};
 use winit::event_loop::EventLoop;
 
 fn create_player(
@@ -26,7 +26,7 @@ fn create_player(
     physics_data: &mut PhysicsData,
     renderer: &Renderer,
     direct_control: bool,
-) {
+) -> Index {
     let character_controller = KinematicCharacterController {
         offset: CharacterLength::Relative(0.1),
         snap_to_ground: Some(CharacterLength::Relative(0.025)),
@@ -86,9 +86,11 @@ fn create_player(
 
         let player_entity = player_builder.with(collider).with(renderable).build();
         world.insert(player_entity);
+        return player_entity.id();
     } else {
         let player_entity = ActiveCamera(player_builder.with(collider).with(Camera).build());
         world.insert(player_entity);
+        return player_entity.id();
     }
 }
 

@@ -15,7 +15,7 @@ use crate::ecs::{
         network::NetworkReplicated,
     },
     resources::network::{
-        MessageType, NetworkData, NetworkPacketIn, NetworkPacketOut, NetworkProtocol,
+        MessageType, NetworkData, NetworkPacketIn, NetworkPacketOut, NetworkProtocol, NetworkTarget,
     },
 };
 
@@ -121,7 +121,7 @@ impl<'a> System<'a> for PlayerHandler {
                     }) {
                         Ok(v) => {
                             if let Err(e) = net_data.sender.try_send(NetworkPacketOut {
-                                net_id: net_rep.net_id,
+                                target: NetworkTarget::Server,
                                 message_type: MessageType::PlayerInput,
                                 protocol: NetworkProtocol::UDP,
                                 data: v,

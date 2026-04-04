@@ -11,7 +11,7 @@ use crate::{
         components::network::NetworkReplicated,
         resources::network::{
             MessageType, NetworkData, NetworkPacketIn, NetworkPacketOut, NetworkProtocol,
-            NewReplicatedData, Player,
+            NetworkTarget, NewReplicatedData, Player,
         },
     },
     network::constants::KEEP_ALIVE_INTERVAL,
@@ -91,7 +91,7 @@ impl<'a> System<'a> for ConnectionHandler {
                             }) {
                                 Ok(data) => {
                                     if let Err(e) = net_data.sender.try_send(NetworkPacketOut {
-                                        net_id: v.client.client_id,
+                                        target: NetworkTarget::Client(v.client.client_id),
                                         message_type: MessageType::ConnectionAccept,
                                         protocol: NetworkProtocol::TCP,
                                         data: data,
@@ -111,7 +111,7 @@ impl<'a> System<'a> for ConnectionHandler {
                                 Ok(v) => {
                                     for (net_id, _) in net_data.player_list.iter_mut() {
                                         if let Err(e) = sender.try_send(NetworkPacketOut {
-                                            net_id: *net_id,
+                                            target: NetworkTarget::Client(*net_id),
                                             message_type: MessageType::NewClient,
                                             protocol: NetworkProtocol::TCP,
                                             data: v.clone(),
@@ -139,7 +139,7 @@ impl<'a> System<'a> for ConnectionHandler {
                                     });
 
                                     if let Err(e) = net_data.sender.try_send(NetworkPacketOut {
-                                        net_id: acc.uuid,
+                                        target: NetworkTarget::Server,
                                         message_type: MessageType::InitGameStateRequest,
                                         protocol: NetworkProtocol::TCP,
                                         data: vec![],
@@ -171,7 +171,7 @@ impl<'a> System<'a> for ConnectionHandler {
                                 }) {
                                     Ok(data) => {
                                         if let Err(e) = net_data.sender.try_send(NetworkPacketOut {
-                                            net_id: v.client.client_id,
+                                            target: NetworkTarget::Client(v.client.client_id),
                                             message_type: MessageType::NewReplicated,
                                             protocol: NetworkProtocol::TCP,
                                             data: data,
@@ -198,7 +198,7 @@ impl<'a> System<'a> for ConnectionHandler {
                 if Instant::now() - client.last_keep_alive >= KEEP_ALIVE_INTERVAL {
                     client.last_keep_alive = Instant::now();
                     if let Err(e) = sender.try_send(NetworkPacketOut {
-                        net_id: *net_id,
+                        target: NetworkTarget::Client(*net_id),
                         message_type: MessageType::ConnectionKeepAlive,
                         protocol: NetworkProtocol::TCP,
                         ..Default::default()
@@ -211,7 +211,7 @@ impl<'a> System<'a> for ConnectionHandler {
             if Instant::now() - player.last_keep_alive >= KEEP_ALIVE_INTERVAL {
                 player.last_keep_alive = Instant::now();
                 if let Err(e) = sender.try_send(NetworkPacketOut {
-                    net_id: player.client_id,
+                    target: NetworkTarget::Server,
                     message_type: MessageType::ConnectionKeepAlive,
                     protocol: NetworkProtocol::TCP,
                     ..Default::default()
@@ -228,6 +228,7 @@ impl<'a> System<'a> for ConnectionHandler {
                 if let Err(e) = sender.try_send(NetworkPacketOut {
                     message_type: MessageType::ConnectionRequest,
                     protocol: NetworkProtocol::TCP,
+                    target: NetworkTarget::Server,
                     ..Default::default()
                 }) {
                     warn!(

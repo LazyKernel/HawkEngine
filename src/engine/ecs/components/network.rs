@@ -1,7 +1,7 @@
 use specs::{Component, HashMapStorage};
 use uuid::Uuid;
 
-#[derive(Component, Default)]
+#[derive(Component, Default, Clone)]
 #[storage(HashMapStorage)]
 pub struct NetworkReplicated {
     // id of the object

@@ -34,7 +34,7 @@ use crate::{
         connection_handler::ConnectionHandler, generic_replicated_handler::GenericHandler,
         player_handler::PlayerHandler,
     },
-    network::tokio::start_network_thread,
+    network::{system::netreplicated_handler::NetReplicatedHandler, tokio::start_network_thread},
 };
 
 pub type PostInitFn = fn(&mut HawkEngine<'_>);
@@ -90,6 +90,11 @@ impl<'a> HawkEngine<'a> {
                 &["replicated_handler"],
             );
             dbuilder.add(ConnectionHandler::default(), "connection_handler", &[]);
+            dbuilder.add(
+                NetReplicatedHandler::default(),
+                "netreplicated_handler",
+                &[],
+            );
         }
 
         let dispatcher = dbuilder
