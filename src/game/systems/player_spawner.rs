@@ -2,17 +2,20 @@ use std::time::Instant;
 
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
-use specs::{shred::DynamicSystemData, ReadStorage, System, WorldExt, Write};
+use specs::{
+    shred::DynamicSystemData, Entities, Read, ReadStorage, System, WorldExt, Write, WriteStorage,
+};
 use tokio::sync::broadcast;
 use uuid::Uuid;
 
 use engine::ecs::{
-    components::network::NetworkReplicated,
+    components::{general::LocalPlayer, network::NetworkReplicated},
     resources::{
         network::{
             MessageType, NetworkData, NetworkPacketIn, NetworkPacketOut, NetworkProtocol,
             NewReplicatedData, Player,
         },
+        physics::PhysicsData,
         ActiveCamera,
     },
     systems::network::connection_handler::NewClientData,
@@ -37,15 +40,37 @@ impl Default for PlayerSpawner {
 impl<'a> System<'a> for PlayerSpawner {
     type SystemData = (
         Entities<'a>,
-        ReadStorage<'a, ActiveCamera>,
+        WriteStorage<'a, NetworkReplicated>,
+        ReadStorage<'a, LocalPlayer>,
         Option<Write<'a, NetworkData>>,
+        Option<Write<'a, PhysicsData>>,
+        Option<Read<'a, RenderData>>,
     );
 
-    fn run(&mut self, (entities, activecam, network_data): Self::SystemData) {
+    fn run(
+        &mut self,
+        (entities, netreplicated, localplayer, network_data, physics_data, render_data): Self::SystemData,
+    ) {
         let net_data = match network_data {
             Some(v) => v,
             None => {
                 warn!("No network data struct, cannot use networking.");
+                return;
+            }
+        };
+
+        let phys_data = match physics_data {
+            Some(v) => v,
+            None => {
+                warn!("No physics data struct, cannot create players in player spawner");
+                return;
+            }
+        };
+
+        let rend_data = match render_data {
+            Some(v) => v,
+            None => {
+                warn!("No render data struct, cannot create players in player spawner");
                 return;
             }
         };
@@ -58,12 +83,15 @@ impl<'a> System<'a> for PlayerSpawner {
                         match rmp_serde::from_slice::<NewClientData>(&v.data) {
                             Ok(data) => {
                                 if net_data.is_server {
-                                    let id = create_player(world, physics_data, renderer, false);
-                                    entities.get(id).insert(NetworkReplicated {
-                                        owner_id: data.uuid,
-                                        net_id: Uuid::new_v4(),
-                                        entity_type: "Player".into(),
-                                    });
+                                    let id = create_player(world, &mut phys_data, renderer, false);
+                                    netreplicated.insert(
+                                        entities.entity(id),
+                                        NetworkReplicated {
+                                            owner_id: data.uuid,
+                                            net_id: Uuid::new_v4(),
+                                            entity_type: "Player".into(),
+                                        },
+                                    );
                                 }
                             }
                             Err(e) => {
@@ -84,15 +112,18 @@ impl<'a> System<'a> for PlayerSpawner {
                                         if data.owner_id
                                             == net_data.player_self.unwrap_or_default().client_id
                                         {
-                                            for (e, c) in (&entities, &activecam).join() {
-                                                e.insert(NetworkReplicated {
-                                                    owner_id: data.owner_id,
-                                                    net_id: data.entity_id,
-                                                    entity_type: data.entity_type,
-                                                });
+                                            for (e, _) in (&*entities, &localplayer).join() {
+                                                netreplicated.insert(
+                                                    e.id(),
+                                                    NetworkReplicated {
+                                                        owner_id: data.owner_id,
+                                                        net_id: data.entity_id,
+                                                        entity_type: data.entity_type,
+                                                    },
+                                                );
                                             }
                                         } else {
-                                            create_player(world, physics_data, renderer, false);
+                                            create_player(world, &mut phys_data, renderer, false);
                                         }
                                     }
                                     _ => {} // ignore others

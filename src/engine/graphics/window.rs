@@ -1,23 +1,26 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use crate::ecs::resources::{CommandBuffer, DeltaTime, RenderDataFrameBuffer};
+use crate::ecs::utils::input::InputHelper;
+use crate::graphics::renderer::Renderer;
+use crate::HawkEngine;
 use log::{info, trace, warn};
 use specs::WorldExt;
 use vulkano::command_buffer::CommandBufferExecFuture;
 use vulkano::image::Image;
 use vulkano::render_pass::Framebuffer;
-use vulkano::swapchain::{acquire_next_image, PresentFuture, SwapchainAcquireFuture, SwapchainCreateInfo, SwapchainPresentInfo};
-use vulkano::sync::{self, GpuFuture};
+use vulkano::swapchain::{
+    acquire_next_image, PresentFuture, SwapchainAcquireFuture, SwapchainCreateInfo,
+    SwapchainPresentInfo,
+};
 use vulkano::sync::future::{FenceSignalFuture, JoinFuture};
+use vulkano::sync::{self, GpuFuture};
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
 use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::window::{Window, WindowId};
-use crate::ecs::resources::{CommandBuffer, DeltaTime, RenderDataFrameBuffer};
-use crate::ecs::utils::input::InputHelper;
-use crate::graphics::renderer::Renderer;
-use crate::HawkEngine;
 
 pub struct WindowState<'a> {
     pub window: Option<Arc<Window>>,
@@ -26,8 +29,19 @@ pub struct WindowState<'a> {
     last_time: Instant,
     target_frame_time: Duration,
 
-
-    fences: Vec<Option<Arc<FenceSignalFuture<PresentFuture<CommandBufferExecFuture<JoinFuture<Box<dyn GpuFuture + 'static>, SwapchainAcquireFuture>>>>>>>,
+    fences: Vec<
+        Option<
+            Arc<
+                FenceSignalFuture<
+                    PresentFuture<
+                        CommandBufferExecFuture<
+                            JoinFuture<Box<dyn GpuFuture + 'static>, SwapchainAcquireFuture>,
+                        >,
+                    >,
+                >,
+            >,
+        >,
+    >,
     previous_fence_i: usize,
 }
 
@@ -47,7 +61,15 @@ impl<'a> WindowState<'a> {
     }
 
     fn renderer_postinit(&mut self) {
-        let frames_in_flight = self.engine.as_ref().unwrap().renderer.as_ref().unwrap().images.len();
+        let frames_in_flight = self
+            .engine
+            .as_ref()
+            .unwrap()
+            .renderer
+            .as_ref()
+            .unwrap()
+            .images
+            .len();
         self.fences = vec![None; frames_in_flight];
     }
 
@@ -58,7 +80,10 @@ impl<'a> WindowState<'a> {
     }
 
     // TODO: Move to renderer
-    fn recreate_swapchain(&self, renderer: &mut Renderer) -> (Vec<Arc<Image>>, Vec<Arc<Framebuffer>>) {
+    fn recreate_swapchain(
+        &self,
+        renderer: &mut Renderer,
+    ) -> (Vec<Arc<Image>>, Vec<Arc<Framebuffer>>) {
         let Some(ref win) = self.window else {
             return (vec![], vec![]);
         };
@@ -83,10 +108,9 @@ impl<'a> WindowState<'a> {
             Err(e) => panic!("Failed to recreate swapchain: {:?}", e),
         };
         renderer.swapchain = new_swapchain;
-        let new_framebuffers = renderer.vulkan.create_framebuffers(
-            &renderer.render_pass,
-            &new_images
-        );
+        let new_framebuffers = renderer
+            .vulkan
+            .create_framebuffers(&renderer.render_pass, &new_images);
 
         (new_images, new_framebuffers)
     }
@@ -111,9 +135,9 @@ impl<'a> WindowState<'a> {
         let vsw = shaders::wireframe::vs::load(self.engine.device.clone()).expect("Failed to load wireframe vs");
         let fsw = shaders::wireframe::fs::load(self.engine.device.clone()).expect("Failed to load wireframe fs");
         let new_pipeline = self.engine.vulkan.create_pipeline(
-            "default", 
-            &self.engine.render_pass, 
-            &self.engine.surface, 
+            "default",
+            &self.engine.render_pass,
+            &self.engine.surface,
             &vs,
             &fs,
             Some(&viewport),
@@ -121,9 +145,9 @@ impl<'a> WindowState<'a> {
         );
         let rasterization_state = RasterizationState { polygon_mode: PolygonMode::Line, ..Default::default() };
         let new_pipeline_wireframe = self.engine.vulkan.create_pipeline(
-            "wireframe", 
-            &self.engine.render_pass, 
-            &self.engine.surface, 
+            "wireframe",
+            &self.engine.render_pass,
+            &self.engine.surface,
             &vsw,
             &fsw,
             Some(&viewport),
@@ -176,18 +200,17 @@ impl<'a> WindowState<'a> {
                 }*/
                 Err(e) => panic!("Failed to acquire next image: {:?}", e),
             };
-        
+
         if suboptimal {
             // TODO: recreate swap chain
         }
-
 
         // Own scope for immutable reference
         {
             // Update render data
             let mut framebuffer = engine.ecs.world.write_resource::<RenderDataFrameBuffer>();
             *framebuffer = RenderDataFrameBuffer(renderer.framebuffers[image_i].clone());
-            
+
             let mut input_res = engine.ecs.world.write_resource::<InputHelper>();
             // HACK: not ideal, but the input helper shouldnt be too big
             *input_res = self.input_helper.clone();
@@ -210,7 +233,11 @@ impl<'a> WindowState<'a> {
         let command_buffer = engine.ecs.world.read_resource::<CommandBuffer>();
         let command_buffer = match &command_buffer.command_buffer {
             Some(v) => v,
-            None => return eprintln!("Command buffer received from ECS was none, skipping rendering for this frame")
+            None => {
+                return eprintln!(
+                    "Command buffer received from ECS was none, skipping rendering for this frame"
+                )
+            }
         };
 
         if let Some(image_fence) = &self.fences[image_i] {
@@ -234,7 +261,10 @@ impl<'a> WindowState<'a> {
             .unwrap()
             .then_swapchain_present(
                 renderer.queue.clone(),
-                SwapchainPresentInfo::swapchain_image_index(renderer.swapchain.clone(), image_i.try_into().unwrap())
+                SwapchainPresentInfo::swapchain_image_index(
+                    renderer.swapchain.clone(),
+                    image_i.try_into().unwrap(),
+                ),
             )
             .then_signal_fence_and_flush();
 
@@ -259,14 +289,17 @@ impl ApplicationHandler for WindowState<'_> {
         let window_attributes = Window::default_attributes()
             .with_title("HawkEngine")
             .with_inner_size(LogicalSize::new(1024, 768));
-        
+
         let window: Arc<Window> = event_loop.create_window(window_attributes).unwrap().into();
         self.window = Some(window.clone());
-        
+
         let renderer = Renderer::new(event_loop, window.clone());
-        
-        self.engine.as_mut().expect("Engine not defined when creating window").set_renderer(renderer);
-        
+
+        self.engine
+            .as_mut()
+            .expect("Engine not defined when creating window")
+            .set_renderer(renderer);
+
         self.renderer_postinit();
     }
 
@@ -283,27 +316,48 @@ impl ApplicationHandler for WindowState<'_> {
             WindowEvent::Focused(_) => {
                 // NOTE: we can use this at some point to filter device events
                 // since those don't automatically get filtered out when the window isn't focused
-            },
-            WindowEvent::KeyboardInput { device_id: _, event, is_synthetic: _ } => self.input_helper.handle_keyboard_input(event),
-            WindowEvent::ModifiersChanged(modifiers) => self.input_helper.handle_modifiers(modifiers),
-            WindowEvent::CursorMoved { device_id: _, position: _ } => trace!("CursorMoved not implemented, using device event instead"),
+            }
+            WindowEvent::KeyboardInput {
+                device_id: _,
+                event,
+                is_synthetic: _,
+            } => self.input_helper.handle_keyboard_input(event),
+            WindowEvent::ModifiersChanged(modifiers) => {
+                self.input_helper.handle_modifiers(modifiers)
+            }
+            WindowEvent::CursorMoved {
+                device_id: _,
+                position: _,
+            } => trace!("CursorMoved not implemented, using device event instead"),
             WindowEvent::CursorEntered { device_id: _ } => trace!("CursorEntered not implemented"),
             WindowEvent::CursorLeft { device_id: _ } => trace!("CursorLeft not implemented"),
-            WindowEvent::MouseWheel { device_id: _, delta: _, phase: _ } => trace!("MouseWheel not implemented"),
-            WindowEvent::MouseInput { device_id: _, state, button } => self.input_helper.handle_mouse_event(state, button),
-            WindowEvent::TouchpadPressure { device_id: _, pressure, stage } => self.input_helper.handle_touchpad_event(pressure, stage),
+            WindowEvent::MouseWheel {
+                device_id: _,
+                delta: _,
+                phase: _,
+            } => trace!("MouseWheel not implemented"),
+            WindowEvent::MouseInput {
+                device_id: _,
+                state,
+                button,
+            } => self.input_helper.handle_mouse_event(state, button),
+            WindowEvent::TouchpadPressure {
+                device_id: _,
+                pressure,
+                stage,
+            } => self.input_helper.handle_touchpad_event(pressure, stage),
             WindowEvent::RedrawRequested => {
                 if Instant::now() - self.last_time >= self.target_frame_time {
                     self.render();
                 }
 
                 self.window.as_ref().unwrap().request_redraw();
-            },
+            }
             WindowEvent::Occluded(_) => {
                 // NOTE: We could use this to optimize rendering
                 // No need to draw when the window is occluded
-            },
-            _ => warn!("Missing arm for winit event {:?}", event)
+            }
+            _ => warn!("Missing arm for winit event {:?}", event),
         }
     }
 
@@ -319,5 +373,4 @@ impl ApplicationHandler for WindowState<'_> {
     fn exiting(&mut self, event_loop: &ActiveEventLoop) {
         let _ = event_loop;
     }
-
 }

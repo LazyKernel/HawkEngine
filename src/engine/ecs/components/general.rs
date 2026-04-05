@@ -201,3 +201,11 @@ impl Movement {
         self.num_jumps_remaining -= 1;
     }
 }
+
+#[derive(Component, Debug, Default)]
+#[storage(NullStorage)]
+pub struct Player;
+
+#[derive(Component, Debug, Default)]
+#[storage(NullStorage)]
+pub struct LocalPlayer;

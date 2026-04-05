@@ -35,6 +35,7 @@ pub struct CommandBuffer {
 #[derive(Default)]
 pub struct ProjectionMatrix(pub Matrix4<f32>);
 
+#[derive(Copy, Clone)]
 pub struct ActiveCamera(pub Entity);
 
 pub struct CursorGrab {

@@ -4,7 +4,7 @@ use argh::FromArgs;
 use engine::{
     ecs::{
         components::{
-            general::{Camera, Movement, Renderable, Transform},
+            general::{Camera, LocalPlayer, Movement, Player, Renderable, Transform},
             physics::{ColliderComponent, ColliderRenderable, RigidBodyComponent},
         },
         resources::{physics::PhysicsData, ActiveCamera},
@@ -70,7 +70,8 @@ fn create_player(
             direct_control: direct_control,
             ..Default::default()
         })
-        .with(rigid_body_component);
+        .with(rigid_body_component)
+        .with(Player);
 
     if !direct_control {
         // get vertices from collider
@@ -88,9 +89,15 @@ fn create_player(
         world.insert(player_entity);
         return player_entity.id();
     } else {
-        let player_entity = ActiveCamera(player_builder.with(collider).with(Camera).build());
+        let player_entity = ActiveCamera(
+            player_builder
+                .with(collider)
+                .with(Camera)
+                .with(LocalPlayer)
+                .build(),
+        );
         world.insert(player_entity);
-        return player_entity.id();
+        return player_entity.0.id();
     }
 }
 

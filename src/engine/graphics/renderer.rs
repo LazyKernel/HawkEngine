@@ -1,23 +1,21 @@
-use crate::ecs::resources::{CommandBuffer, CursorGrab, DeltaTime, ProjectionMatrix, RenderData, RenderDataFrameBuffer};
+use crate::ecs::resources::{
+    CommandBuffer, CursorGrab, DeltaTime, ProjectionMatrix, RenderData, RenderDataFrameBuffer,
+};
 use crate::ecs::utils::input::InputHelper;
 use crate::graphics::vulkan::Vulkan;
 use crate::{shaders, HawkEngine};
 use nalgebra::Perspective3;
 use vulkano::buffer::Buffer;
-use vulkano::pipeline::graphics::rasterization::{RasterizationState, PolygonMode};
-use vulkano::pipeline::{GraphicsPipeline};
-use vulkano::swapchain::{Swapchain, Surface};
-use winit::window::{Window};
+use vulkano::pipeline::graphics::rasterization::{PolygonMode, RasterizationState};
+use vulkano::pipeline::GraphicsPipeline;
+use vulkano::swapchain::{Surface, Swapchain};
+use winit::window::Window;
 
 use std::sync::Arc;
+use vulkano::device::{Device, DeviceExtensions, Queue};
+use vulkano::image::Image;
+use vulkano::render_pass::{Framebuffer, RenderPass};
 use winit::event_loop::ActiveEventLoop;
-use vulkano::device::{
-    Device, 
-    Queue, DeviceExtensions,
-};
-use vulkano::image::{Image};
-use vulkano::render_pass::{RenderPass, Framebuffer};
-
 
 #[cfg(all(debug_assertions))]
 const ENABLE_VALIDATION_LAYERS: bool = true;
@@ -51,7 +49,8 @@ impl Renderer {
 
         let instance = Vulkan::create_instance(&event_loop, ENABLE_VALIDATION_LAYERS);
         let surface = Vulkan::create_surface(&instance, window.clone());
-        let (physical, queue_index) = Vulkan::select_physical_device(&instance, &surface, &device_extensions);
+        let (physical, queue_index) =
+            Vulkan::select_physical_device(&instance, &surface, &device_extensions);
         let (device, queue) = Vulkan::create_device(&physical, queue_index, &device_extensions);
 
         let mut vulkan = Vulkan::new(&device, &queue);
@@ -60,17 +59,43 @@ impl Renderer {
         let vs = shaders::default::vs::load(device.clone()).expect("Failed to load default vs");
         let fs = shaders::default::fs::load(device.clone()).expect("Failed to load default fs");
         // Wireframe
-        let vsw = shaders::wireframe::vs::load(device.clone()).expect("Failed to load wireframe vs");
-        let fsw = shaders::wireframe::fs::load(device.clone()).expect("Failed to load wireframe fs");
+        let vsw =
+            shaders::wireframe::vs::load(device.clone()).expect("Failed to load wireframe vs");
+        let fsw =
+            shaders::wireframe::fs::load(device.clone()).expect("Failed to load wireframe fs");
 
         let (swapchain, images) = vulkan.create_swapchain(&physical, &surface);
         let render_pass = vulkan.create_render_pass(&swapchain);
-        let framebuffers= vulkan.create_framebuffers(&render_pass, &images);
-        let pipeline = vulkan.create_pipeline("default", &render_pass, &surface, &vs, &fs, None, None);
-        let rasterization_state = RasterizationState { polygon_mode: PolygonMode::Line, ..Default::default() };
-        let pipeline_wireframe = vulkan.create_pipeline("wireframe", &render_pass, &surface, &vsw, &fsw, None, Some(&rasterization_state));
+        let framebuffers = vulkan.create_framebuffers(&render_pass, &images);
+        let pipeline =
+            vulkan.create_pipeline("default", &render_pass, &surface, &vs, &fs, None, None);
+        let rasterization_state = RasterizationState {
+            polygon_mode: PolygonMode::Line,
+            ..Default::default()
+        };
+        let pipeline_wireframe = vulkan.create_pipeline(
+            "wireframe",
+            &render_pass,
+            &surface,
+            &vsw,
+            &fsw,
+            None,
+            Some(&rasterization_state),
+        );
         let ubo_pool = vulkan.create_view_ubo_pool();
-        return Self { device, queue, render_pass, framebuffers, pipeline, pipeline_wireframe, surface, swapchain, images, ubo_pool, vulkan };
+        return Self {
+            device,
+            queue,
+            render_pass,
+            framebuffers,
+            pipeline,
+            pipeline_wireframe,
+            surface,
+            swapchain,
+            images,
+            ubo_pool,
+            vulkan,
+        };
     }
 
     pub fn setup_engine(&self, engine: &mut HawkEngine<'_>) {
@@ -81,10 +106,11 @@ impl Renderer {
             (45.0 as f32).to_radians(),
             0.1,
             1000.0,
-        ).to_homogeneous();
+        )
+        .to_homogeneous();
         // convert from OpenGL to Vulkan coordinates
         proj[(1, 1)] *= -1.0;
-        
+
         // Add initial input
         engine.ecs.world.insert(input.clone());
         // Add initial surface
@@ -101,13 +127,17 @@ impl Renderer {
             buffer_allocator: self.vulkan.buffer_memory_allocator.clone(),
             command_buffer_allocator: self.vulkan.command_buffer_allocator.clone(),
             descriptor_set_allocator: self.vulkan.descriptor_set_allocator.clone(),
-            queue_family_index: self.vulkan.queue.queue_family_index()
+            queue_family_index: self.vulkan.queue.queue_family_index(),
         });
-        engine.ecs.world.insert(RenderDataFrameBuffer(self.framebuffers[0].clone()));
+        engine
+            .ecs
+            .world
+            .insert(RenderDataFrameBuffer(self.framebuffers[0].clone()));
         // Add empty command buffer
-        engine.ecs.world.insert(CommandBuffer { command_buffer: None });
+        engine.ecs.world.insert(CommandBuffer {
+            command_buffer: None,
+        });
         // Add 0 delta time
         engine.ecs.world.insert(DeltaTime(0.0));
     }
 }
-
