@@ -1,7 +1,7 @@
 use specs::{World, WorldExt};
 
 use crate::ecs::components::{
-    general::{Renderable, Transform},
+    general::{LocalPlayer, Player, Renderable, Transform},
     network::NetworkReplicated,
 };
 
@@ -35,6 +35,8 @@ impl ECS {
         world.register::<ColliderComponent>();
         world.register::<Wireframe>();
         world.register::<ColliderRenderable>();
+        world.register::<LocalPlayer>();
+        world.register::<Player>();
 
         // network
         world.register::<NetworkReplicated>();

@@ -3,7 +3,8 @@ use std::time::Instant;
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
 use specs::{
-    shred::DynamicSystemData, Entities, Read, ReadStorage, System, WorldExt, Write, WriteStorage,
+    shred::DynamicSystemData, Builder, Entities, Join as _, LazyUpdate, Read, ReadStorage, System,
+    WorldExt, Write, WriteStorage,
 };
 use tokio::sync::broadcast;
 use uuid::Uuid;
@@ -16,12 +17,12 @@ use engine::ecs::{
             NewReplicatedData, Player,
         },
         physics::PhysicsData,
-        ActiveCamera,
+        ActiveCamera, RenderData,
     },
     systems::network::connection_handler::NewClientData,
 };
 
-use crate::create_player;
+use crate::{create_player, create_player_components, TempRenderInputChoice};
 
 // Spawns a new player on new client join
 
@@ -45,11 +46,20 @@ impl<'a> System<'a> for PlayerSpawner {
         Option<Write<'a, NetworkData>>,
         Option<Write<'a, PhysicsData>>,
         Option<Read<'a, RenderData>>,
+        Read<'a, LazyUpdate>,
     );
 
     fn run(
         &mut self,
-        (entities, netreplicated, localplayer, network_data, physics_data, render_data): Self::SystemData,
+        (
+            entities,
+            mut netreplicated,
+            localplayer,
+            network_data,
+            physics_data,
+            render_data,
+            lazy,
+        ): Self::SystemData,
     ) {
         let net_data = match network_data {
             Some(v) => v,
@@ -59,7 +69,7 @@ impl<'a> System<'a> for PlayerSpawner {
             }
         };
 
-        let phys_data = match physics_data {
+        let mut phys_data = match physics_data {
             Some(v) => v,
             None => {
                 warn!("No physics data struct, cannot create players in player spawner");
@@ -83,14 +93,16 @@ impl<'a> System<'a> for PlayerSpawner {
                         match rmp_serde::from_slice::<NewClientData>(&v.data) {
                             Ok(data) => {
                                 if net_data.is_server {
-                                    let id = create_player(world, &mut phys_data, renderer, false);
-                                    netreplicated.insert(
-                                        entities.entity(id),
-                                        NetworkReplicated {
+                                    let new_entity =
+                                        lazy.create_entity(&entities).with(NetworkReplicated {
                                             owner_id: data.uuid,
                                             net_id: Uuid::new_v4(),
                                             entity_type: "Player".into(),
-                                        },
+                                        });
+                                    let _ = create_player(
+                                        new_entity,
+                                        &mut phys_data,
+                                        TempRenderInputChoice::RENDERDATA(&rend_data),
                                     );
                                 }
                             }
@@ -114,16 +126,27 @@ impl<'a> System<'a> for PlayerSpawner {
                                         {
                                             for (e, _) in (&*entities, &localplayer).join() {
                                                 netreplicated.insert(
-                                                    e.id(),
+                                                    e,
                                                     NetworkReplicated {
                                                         owner_id: data.owner_id,
                                                         net_id: data.entity_id,
-                                                        entity_type: data.entity_type,
+                                                        entity_type: data.entity_type.clone(),
                                                     },
                                                 );
                                             }
                                         } else {
-                                            create_player(world, &mut phys_data, renderer, false);
+                                            let new_entity = lazy.create_entity(&entities).with(
+                                                NetworkReplicated {
+                                                    owner_id: data.owner_id,
+                                                    net_id: data.entity_id,
+                                                    entity_type: data.entity_type,
+                                                },
+                                            );
+                                            let _ = create_player(
+                                                new_entity,
+                                                &mut phys_data,
+                                                TempRenderInputChoice::RENDERDATA(&rend_data),
+                                            );
                                         }
                                     }
                                     _ => {} // ignore others

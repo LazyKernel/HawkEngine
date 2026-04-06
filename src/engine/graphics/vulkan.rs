@@ -1,6 +1,7 @@
 use crate::data_structures::graphics::GenericVertex;
 use crate::ecs::components::general::Renderable;
 use crate::ecs::resources::RenderData;
+use crate::ecs::systems::render;
 use crate::shaders::default::vs::VPUniformBufferObject;
 use vulkano::command_buffer::allocator::{
     StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo,
@@ -59,7 +60,7 @@ use winit::window::Window;
 pub struct Vulkan {
     pub device: Arc<Device>,
     pub queue: Arc<Queue>,
-    sampler: Arc<Sampler>,
+    pub sampler: Arc<Sampler>,
     pipelines: HashMap<String, Arc<GraphicsPipeline>>,
     pub buffer_memory_allocator: Arc<StandardMemoryAllocator>,
     pub command_buffer_allocator: Arc<StandardCommandBufferAllocator>,
@@ -520,7 +521,12 @@ impl Vulkan {
     // Utils
     //--------------------------
 
-    pub fn load_image(&self, path: &str) -> (Arc<ImageView>, Box<dyn GpuFuture>) {
+    pub fn load_image(
+        path: &str,
+        queue: Arc<Queue>,
+        command_buffer_allocator: Arc<StandardCommandBufferAllocator>,
+        buffer_memory_allocator: Arc<StandardMemoryAllocator>,
+    ) -> (Arc<ImageView>, Box<dyn GpuFuture>) {
         // TODO: add error handling
         let image = File::open(path).unwrap();
 
@@ -535,14 +541,14 @@ impl Vulkan {
         let dimensions = [width, height, 1];
 
         let mut uploads = AutoCommandBufferBuilder::primary(
-            self.command_buffer_allocator.clone(),
-            self.queue.queue_family_index(),
+            command_buffer_allocator.clone(),
+            queue.queue_family_index(),
             CommandBufferUsage::OneTimeSubmit,
         )
         .unwrap();
 
         let buffer = Buffer::from_iter(
-            self.buffer_memory_allocator.clone(),
+            buffer_memory_allocator.clone(),
             BufferCreateInfo {
                 usage: BufferUsage::TRANSFER_SRC,
                 ..Default::default()
@@ -556,7 +562,7 @@ impl Vulkan {
         .unwrap();
 
         let image = Image::new(
-            self.buffer_memory_allocator.clone(),
+            buffer_memory_allocator.clone(),
             ImageCreateInfo {
                 image_type: ImageType::Dim2d,
                 format: Format::R8G8B8A8_SRGB,
@@ -581,7 +587,7 @@ impl Vulkan {
         let image_upload = uploads
             .build()
             .unwrap()
-            .execute(self.queue.clone())
+            .execute(queue.clone())
             .unwrap()
             .boxed();
 
@@ -594,8 +600,8 @@ impl Vulkan {
     }
 
     pub fn load_model(
-        &self,
         path: &str,
+        buffer_memory_allocator: Arc<StandardMemoryAllocator>,
     ) -> (Arc<Subbuffer<[GenericVertex]>>, Arc<Subbuffer<[u32]>>) {
         // TODO: add error handling
         let mut reader = BufReader::new(File::open(path).unwrap());
@@ -649,16 +655,16 @@ impl Vulkan {
             }
         }
 
-        return self.create_vertex_buffers(vertices, indices);
+        return Vulkan::create_vertex_buffers(vertices, indices, buffer_memory_allocator);
     }
 
     pub fn create_vertex_buffers(
-        &self,
         vertices: Vec<GenericVertex>,
         indices: Vec<u32>,
+        buffer_memory_allocator: Arc<StandardMemoryAllocator>,
     ) -> (Arc<Subbuffer<[GenericVertex]>>, Arc<Subbuffer<[u32]>>) {
         let vertex_buffer = Buffer::from_iter(
-            self.buffer_memory_allocator.clone(),
+            buffer_memory_allocator.clone(),
             BufferCreateInfo {
                 usage: BufferUsage::VERTEX_BUFFER,
                 ..Default::default()
@@ -672,7 +678,7 @@ impl Vulkan {
         .unwrap();
 
         let index_buffer = Buffer::from_iter(
-            self.buffer_memory_allocator.clone(),
+            buffer_memory_allocator.clone(),
             BufferCreateInfo {
                 usage: BufferUsage::INDEX_BUFFER,
                 ..Default::default()
@@ -695,8 +701,14 @@ impl Vulkan {
     ) -> Result<Renderable, String> {
         let model_path = format!("resources/{}.obj", model_name);
         let texture_path = format!("resources/{}.png", model_name);
-        let (vertices, indices) = self.load_model(&model_path);
-        let (texture, image_upload) = self.load_image(&texture_path);
+        let (vertices, indices) =
+            Vulkan::load_model(&model_path, self.buffer_memory_allocator.clone());
+        let (texture, image_upload) = Vulkan::load_image(
+            &texture_path,
+            self.queue.clone(),
+            self.command_buffer_allocator.clone(),
+            self.buffer_memory_allocator.clone(),
+        );
 
         self.internal_create_renderable(&vertices, &indices, &texture, pipeline_name)
     }
@@ -709,12 +721,56 @@ impl Vulkan {
         pipeline_name: Option<String>,
     ) -> Result<Renderable, String> {
         let texture_path = format!("resources/{}.png", texture_name);
-        let (vertices, indices) = self.create_vertex_buffers(vertices, indices);
-        let (texture, image_upload) = self.load_image(&texture_path);
+        let (vertices, indices) =
+            Vulkan::create_vertex_buffers(vertices, indices, self.buffer_memory_allocator.clone());
+        let (texture, image_upload) = Vulkan::load_image(
+            &texture_path,
+            self.queue.clone(),
+            self.command_buffer_allocator.clone(),
+            self.buffer_memory_allocator.clone(),
+        );
         // TODO: save image_upload to an array and periodically check if they are finished
         // Should also probably check that the upload has finished before using it
 
         self.internal_create_renderable(&vertices, &indices, &texture, pipeline_name)
+    }
+
+    pub fn create_renderable_from_vertices_with_renderdata(
+        vertices: Vec<GenericVertex>,
+        indices: Vec<u32>,
+        texture_name: &str,
+        render_data: &RenderData,
+    ) -> Result<Renderable, String> {
+        let texture_path = format!("resources/{}.png", texture_name);
+        let (vertices, indices) =
+            Vulkan::create_vertex_buffers(vertices, indices, render_data.buffer_allocator.clone());
+        let (texture, image_upload) = Vulkan::load_image(
+            &texture_path,
+            render_data.queue.clone(),
+            render_data.command_buffer_allocator.clone(),
+            render_data.buffer_allocator.clone(),
+        );
+        // TODO: save image_upload to an array and periodically check if they are finished
+        // Should also probably check that the upload has finished before using it
+
+        let layout_texture = render_data.pipeline.layout().set_layouts().get(1).unwrap();
+        let descriptor_set_texture = DescriptorSet::new(
+            render_data.descriptor_set_allocator.clone(),
+            layout_texture.clone(),
+            [WriteDescriptorSet::image_view_sampler(
+                0,
+                texture.clone(),
+                render_data.sampler.clone(),
+            )],
+            [],
+        )
+        .unwrap();
+
+        Ok(Renderable {
+            vertex_buffer: (*vertices).clone(),
+            index_buffer: (*indices).clone(),
+            descriptor_set_texture,
+        })
     }
 
     fn internal_create_renderable(

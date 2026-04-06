@@ -6,6 +6,8 @@ use vulkano::{
     buffer::Buffer,
     command_buffer::{allocator::StandardCommandBufferAllocator, PrimaryAutoCommandBuffer},
     descriptor_set::allocator::StandardDescriptorSetAllocator,
+    device::Queue,
+    image::sampler::Sampler,
     memory::allocator::StandardMemoryAllocator,
     pipeline::GraphicsPipeline,
     render_pass::Framebuffer,
@@ -23,6 +25,8 @@ pub struct RenderData {
     pub command_buffer_allocator: Arc<StandardCommandBufferAllocator>,
     pub descriptor_set_allocator: Arc<StandardDescriptorSetAllocator>,
     pub queue_family_index: u32,
+    pub queue: Arc<Queue>,
+    pub sampler: Arc<Sampler>,
 }
 
 pub struct RenderDataFrameBuffer(pub Arc<Framebuffer>);

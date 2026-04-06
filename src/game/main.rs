@@ -7,10 +7,10 @@ use engine::{
             general::{Camera, LocalPlayer, Movement, Player, Renderable, Transform},
             physics::{ColliderComponent, ColliderRenderable, RigidBodyComponent},
         },
-        resources::{physics::PhysicsData, ActiveCamera},
+        resources::{physics::PhysicsData, ActiveCamera, RenderData},
         utils::objects::create_terrain,
     },
-    start_engine, EngineFeatures, HawkEngine, Renderer,
+    start_engine, EngineFeatures, HawkEngine, Renderer, Vulkan,
 };
 use log::error;
 use nalgebra::Vector3;
@@ -21,12 +21,10 @@ use rapier3d::{
 use specs::{world::Index, Builder, Entity, World, WorldExt};
 use winit::event_loop::EventLoop;
 
-fn create_player(
-    world: &mut World,
+fn create_player_components(
     physics_data: &mut PhysicsData,
-    renderer: &Renderer,
     direct_control: bool,
-) -> Index {
+) -> (RigidBodyComponent, ColliderComponent, Transform, Movement) {
     let character_controller = KinematicCharacterController {
         offset: CharacterLength::Relative(0.1),
         snap_to_ground: Some(CharacterLength::Relative(0.025)),
@@ -53,52 +51,86 @@ fn create_player(
     let collider =
         ColliderComponent::new(collider, Some(&rigid_body_component.handle), physics_data);
 
+    let transform = Transform {
+        pos: Vector3::new(0.0, 15.0, 0.0),
+        ..Default::default()
+    };
+    let movement = Movement {
+        speed: 10.0,
+        boost: 20.0,
+        slow: 5.0,
+        jump: 3000.0,
+        sensitivity: 0.1,
+        max_jumps: 2,
+        direct_control: direct_control,
+        ..Default::default()
+    };
+
+    return (rigid_body_component, collider, transform, movement);
+}
+
+fn create_local_player(builder: impl Builder, physics_data: &mut PhysicsData) -> ActiveCamera {
+    let (rigidbody, collider, transform, movement) = create_player_components(physics_data, true);
+
     // Add a player
-    let player_builder = world
-        .create_entity()
-        .with(Transform {
-            pos: Vector3::new(0.0, 15.0, 0.0),
-            ..Default::default()
-        })
-        .with(Movement {
-            speed: 10.0,
-            boost: 20.0,
-            slow: 5.0,
-            jump: 3000.0,
-            sensitivity: 0.1,
-            max_jumps: 2,
-            direct_control: direct_control,
-            ..Default::default()
-        })
-        .with(rigid_body_component)
+    let player_builder = builder
+        .with(transform)
+        .with(movement)
+        .with(rigidbody)
         .with(Player);
 
-    if !direct_control {
-        // get vertices from collider
-        let (v, i) = collider.get_vertices(&physics_data);
-        let vert = ColliderRenderable::convert_to_vertex(v);
-        // using viking_room as a temp texture
-        let model_name = "viking_room";
+    let player_entity = ActiveCamera(
+        player_builder
+            .with(collider)
+            .with(Camera)
+            .with(LocalPlayer)
+            .build(),
+    );
+    return player_entity;
+}
 
-        let renderable = renderer
+enum TempRenderInputChoice<'a> {
+    RENDERER(&'a Renderer),
+    RENDERDATA(&'a RenderData),
+}
+
+fn create_player(
+    builder: impl Builder,
+    physics_data: &mut PhysicsData,
+    renderer: TempRenderInputChoice,
+) -> Entity {
+    let (rigidbody, collider, transform, movement) = create_player_components(physics_data, false);
+
+    // Add a player
+    let player_builder = builder
+        .with(transform)
+        .with(movement)
+        .with(rigidbody)
+        .with(Player);
+
+    // get vertices from collider
+    let (v, i) = collider.get_vertices(&physics_data);
+    let vert = ColliderRenderable::convert_to_vertex(v);
+    // using viking_room as a temp texture
+    let model_name = "viking_room";
+
+    let renderable = match renderer {
+        TempRenderInputChoice::RENDERER(renderer) => renderer
             .vulkan
-            .create_renderable_from_vertices(vert, i, model_name, None)
-            .expect("Could not create player renderable, cannot continue");
-
-        let player_entity = player_builder.with(collider).with(renderable).build();
-        world.insert(player_entity);
-        return player_entity.id();
-    } else {
-        let player_entity = ActiveCamera(
-            player_builder
-                .with(collider)
-                .with(Camera)
-                .with(LocalPlayer)
-                .build(),
-        );
-        world.insert(player_entity);
-        return player_entity.0.id();
+            .create_renderable_from_vertices(vert, i, model_name, None),
+        TempRenderInputChoice::RENDERDATA(render_data) => {
+            Vulkan::create_renderable_from_vertices_with_renderdata(
+                vert,
+                i,
+                model_name,
+                render_data,
+            )
+        }
     }
+    .expect("Could not create player renderable, cannot continue");
+
+    let player_entity = player_builder.with(collider).with(renderable).build();
+    return player_entity;
 }
 
 fn init(engine: &mut HawkEngine) {
@@ -112,7 +144,8 @@ fn init(engine: &mut HawkEngine) {
     // Add physics stuff
     let mut physics_data = PhysicsData::default();
 
-    create_player(world, &mut physics_data, &renderer, true);
+    let e = create_local_player(world.create_entity(), &mut physics_data);
+    world.insert(e);
 
     // Add a terrain
     let (terrain_renderable, terrain_rigid_body, terrain_collider) =
@@ -131,7 +164,11 @@ fn init(engine: &mut HawkEngine) {
 
             let (ve, i) = collider.get_vertices(&physics_data);
             let vert = ColliderRenderable::convert_to_vertex(ve);
-            let (vb, ib) = renderer.vulkan.create_vertex_buffers(vert, i);
+            let (vb, ib) = Vulkan::create_vertex_buffers(
+                vert,
+                i,
+                renderer.vulkan.buffer_memory_allocator.clone(),
+            );
 
             let terrain = world
                 .create_entity()

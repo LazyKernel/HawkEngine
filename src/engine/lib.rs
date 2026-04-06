@@ -18,6 +18,7 @@ mod physics;
 mod shaders;
 
 pub use graphics::renderer::Renderer;
+pub use graphics::vulkan::Vulkan;
 pub use graphics::window::WindowState;
 
 use bitflags::bitflags;

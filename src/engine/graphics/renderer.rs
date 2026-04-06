@@ -128,6 +128,8 @@ impl Renderer {
             command_buffer_allocator: self.vulkan.command_buffer_allocator.clone(),
             descriptor_set_allocator: self.vulkan.descriptor_set_allocator.clone(),
             queue_family_index: self.vulkan.queue.queue_family_index(),
+            queue: self.queue.clone(),
+            sampler: self.vulkan.sampler.clone(),
         });
         engine
             .ecs
