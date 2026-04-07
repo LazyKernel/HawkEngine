@@ -18,8 +18,10 @@ use rapier3d::{
     control::{CharacterLength, KinematicCharacterController},
     prelude::{ColliderBuilder, RigidBodyBuilder, RigidBodyType, SharedShape},
 };
-use specs::{world::Index, Builder, Entity, World, WorldExt};
+use specs::{world::Index, Builder, DispatcherBuilder, Entity, World, WorldExt};
 use winit::event_loop::EventLoop;
+
+use crate::systems::player_spawner::PlayerSpawner;
 
 fn create_player_components(
     physics_data: &mut PhysicsData,
@@ -134,6 +136,10 @@ fn create_player(
 }
 
 fn init(engine: &mut HawkEngine) {
+    let mut dispatcher = DispatcherBuilder::new();
+    dispatcher.add(PlayerSpawner::default(), "player_spawner", &[]);
+    engine.add_dispatcher(dispatcher.build());
+
     let world = &mut engine.ecs.world;
 
     let renderer = match &engine.renderer {

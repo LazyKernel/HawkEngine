@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use log::{error, info, warn};
+use log::{error, info, trace, warn};
 use serde::{Deserialize, Serialize};
 use specs::{
     shred::DynamicSystemData, Builder, Entities, Join as _, LazyUpdate, Read, ReadStorage, System,
@@ -89,26 +89,20 @@ impl<'a> System<'a> for PlayerSpawner {
         while !self.receiver.is_empty() {
             match self.receiver.try_recv() {
                 Ok(v) => match v.message_type {
-                    MessageType::NewClient => {
-                        match rmp_serde::from_slice::<NewClientData>(&v.data) {
-                            Ok(data) => {
-                                if net_data.is_server {
-                                    let new_entity =
-                                        lazy.create_entity(&entities).with(NetworkReplicated {
-                                            owner_id: data.uuid,
-                                            net_id: Uuid::new_v4(),
-                                            entity_type: "Player".into(),
-                                        });
-                                    let _ = create_player(
-                                        new_entity,
-                                        &mut phys_data,
-                                        TempRenderInputChoice::RENDERDATA(&rend_data),
-                                    );
-                                }
-                            }
-                            Err(e) => {
-                                error!("Could not parse NewClientData in PlayerSpawner: {:?}", e)
-                            }
+                    MessageType::InitGameStateRequest => {
+                        if net_data.is_server {
+                            info!("Creating new player on server");
+                            let new_entity =
+                                lazy.create_entity(&entities).with(NetworkReplicated {
+                                    owner_id: v.client.client_id,
+                                    net_id: Uuid::new_v4(),
+                                    entity_type: "Player".into(),
+                                });
+                            let _ = create_player(
+                                new_entity,
+                                &mut phys_data,
+                                TempRenderInputChoice::RENDERDATA(&rend_data),
+                            );
                         }
                     }
                     MessageType::NewReplicated => {
@@ -119,20 +113,24 @@ impl<'a> System<'a> for PlayerSpawner {
                                     continue;
                                 }
 
+                                trace!("New replicated message on client");
+
                                 match data.entity_type.as_str() {
                                     "Player" => {
                                         if data.owner_id
                                             == net_data.player_self.unwrap_or_default().client_id
                                         {
                                             for (e, _) in (&*entities, &localplayer).join() {
-                                                netreplicated.insert(
+                                                if let Err(err) = netreplicated.insert(
                                                     e,
                                                     NetworkReplicated {
                                                         owner_id: data.owner_id,
                                                         net_id: data.entity_id,
                                                         entity_type: data.entity_type.clone(),
                                                     },
-                                                );
+                                                ) {
+                                                    error!("Could not insert NetworkReplicated to own player: {:?}", err);
+                                                }
                                             }
                                         } else {
                                             let new_entity = lazy.create_entity(&entities).with(
