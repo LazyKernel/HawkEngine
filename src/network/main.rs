@@ -1,3 +1,4 @@
+use flexi_logger::Logger;
 use log::{error, info, trace, warn};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -581,7 +582,7 @@ async fn client() {
 
 #[tokio::main]
 async fn main() {
-    pretty_env_logger::init();
+    let _ = Logger::try_with_env_or_str("info").unwrap().start();
 
     trace!("Starting");
 

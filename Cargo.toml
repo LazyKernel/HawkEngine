@@ -24,10 +24,9 @@ anyhow = "1.0.65"
 bitflags = { version = "2.10.0", features = ["serde"] }
 bytemuck = "1.12.1"
 lazy_static = "1.4.0"
-log = "0.4.17"
+log = "0.4"
 nalgebra = "0.32.2"
 png = "0.17.6"
-pretty_env_logger = "0.4.0"
 rapier3d = { version = "0.17.2", features = ["simd-stable", "serde-serialize"] }
 rmp = "0.8.12"
 rmp-serde = "1.1.2"
@@ -41,6 +40,7 @@ vulkano = "0.35"
 vulkano-shaders = { version = "0.35", features = ["shaderc-build-from-source"] }
 winit = "0.30"
 argh = "0.1.13"
+flexi_logger = { version = "0.31.8", features = ["colors", "compress", "async"] }
 
 [profile.dev]
 opt-level = 1 

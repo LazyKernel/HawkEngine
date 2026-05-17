@@ -17,6 +17,7 @@ mod network;
 mod physics;
 mod shaders;
 
+use flexi_logger::{Cleanup, Criterion, Duplicate, FileSpec, Logger, Naming, WriteMode};
 pub use graphics::renderer::Renderer;
 pub use graphics::vulkan::Vulkan;
 pub use graphics::window::WindowState;
@@ -62,13 +63,18 @@ impl<'a> HawkEngine<'a> {
     If use_networking is true, expecting start_network_thread to be called at some point
     */
     pub fn new(enabled_features: EngineFeatures) -> Self {
-        match pretty_env_logger::try_init() {
-            Ok(_) => {}
-            Err(e) => trace!(
-                "Failed to init pretty_env_logger, probably already initialized: {:?}",
-                e
-            ),
-        }
+        Logger::try_with_env_or_str("info, engine::network=trace")
+            .expect("Failed to init Logger")
+            .log_to_file(FileSpec::default().directory("logs"))
+            .duplicate_to_stdout(Duplicate::All)
+            .write_mode(WriteMode::BufferAndFlush)
+            .rotate(
+                Criterion::Size(10_000_000),
+                Naming::Timestamps,
+                Cleanup::KeepLogFiles(5),
+            )
+            .start()
+            .expect("Failed to start Logger");
 
         // Create ECS classes
         let ecs = ECS::new();
