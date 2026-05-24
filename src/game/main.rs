@@ -237,7 +237,16 @@ struct GameArgs {
 fn main() {
     let args: GameArgs = argh::from_env();
     let event_loop = EventLoop::new().expect("Could not create event loop");
-    let mut engine = HawkEngine::new(EngineFeatures::PHYSICS | EngineFeatures::NETWORK);
+    let log_dir = if args.server {
+        "logs/server"
+    } else {
+        "logs/client"
+    };
+
+    let mut engine = HawkEngine::new(
+        EngineFeatures::PHYSICS | EngineFeatures::NETWORK,
+        Some(log_dir),
+    );
 
     engine.add_post_init_fn(init);
 

@@ -17,6 +17,8 @@ mod network;
 mod physics;
 mod shaders;
 
+use std::env;
+
 use flexi_logger::{Cleanup, Criterion, Duplicate, FileSpec, Logger, Naming, WriteMode};
 pub use graphics::renderer::Renderer;
 pub use graphics::vulkan::Vulkan;
@@ -27,7 +29,7 @@ use ecs::systems::general::PlayerInput;
 use ecs::systems::physics::Physics;
 use ecs::systems::render::Render;
 use ecs::ECS;
-use log::{trace, warn};
+use log::{info, trace, warn};
 use specs::{Dispatcher, DispatcherBuilder, WorldExt};
 use winit::event_loop::EventLoop;
 
@@ -62,11 +64,16 @@ impl<'a> HawkEngine<'a> {
     If use_physics is true, PhysicsData is expected to be provided as a resource
     If use_networking is true, expecting start_network_thread to be called at some point
     */
-    pub fn new(enabled_features: EngineFeatures) -> Self {
-        Logger::try_with_env_or_str("info, engine::network=trace")
+    pub fn new(enabled_features: EngineFeatures, log_directory: Option<&str>) -> Self {
+        match env::var("RUST_LOG") {
+            Ok(val) => info!("Using log level {:?} from RUST_LOG env variable", val),
+            Err(_) => info!("Using default log level"),
+        }
+
+        Logger::try_with_env_or_str("info,engine::network=trace")
             .expect("Failed to init Logger")
-            .log_to_file(FileSpec::default().directory("logs"))
-            .duplicate_to_stdout(Duplicate::All)
+            .log_to_file(FileSpec::default().directory(log_directory.unwrap_or("logs")))
+            .duplicate_to_stdout(Duplicate::Info)
             .write_mode(WriteMode::BufferAndFlush)
             .rotate(
                 Criterion::Size(10_000_000),
